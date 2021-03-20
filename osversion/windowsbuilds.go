@@ -35,4 +35,8 @@ const (
 
 	// V20H2 corresponds to Windows Server 20H2 (semi-annual channel).
 	V20H2 = 19042
+
+	// minimum build required for cimfs
+	//TODO(ambarve): replace this with correct value before merging
+	V21H1 = 21280
 )
