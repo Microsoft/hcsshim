@@ -1,3 +1,30 @@
+# github.com/Azure/azure-sdk-for-go v52.4.0+incompatible
+## explicit
+github.com/Azure/azure-sdk-for-go/services/keyvault/v7.1/keyvault
+github.com/Azure/azure-sdk-for-go/version
+# github.com/Azure/go-autorest v14.2.0+incompatible
+github.com/Azure/go-autorest
+# github.com/Azure/go-autorest/autorest v0.11.17
+## explicit
+github.com/Azure/go-autorest/autorest
+github.com/Azure/go-autorest/autorest/azure
+# github.com/Azure/go-autorest/autorest/adal v0.9.11
+github.com/Azure/go-autorest/autorest/adal
+# github.com/Azure/go-autorest/autorest/azure/auth v0.5.7
+## explicit
+github.com/Azure/go-autorest/autorest/azure/auth
+# github.com/Azure/go-autorest/autorest/azure/cli v0.4.2
+github.com/Azure/go-autorest/autorest/azure/cli
+# github.com/Azure/go-autorest/autorest/date v0.3.0
+github.com/Azure/go-autorest/autorest/date
+# github.com/Azure/go-autorest/autorest/to v0.2.0
+github.com/Azure/go-autorest/autorest/to
+# github.com/Azure/go-autorest/autorest/validation v0.1.0
+github.com/Azure/go-autorest/autorest/validation
+# github.com/Azure/go-autorest/logger v0.2.0
+github.com/Azure/go-autorest/logger
+# github.com/Azure/go-autorest/tracing v0.6.0
+github.com/Azure/go-autorest/tracing
 # github.com/Microsoft/go-winio v0.4.17-0.20210211115548-6eac466e5fa3
 ## explicit
 github.com/Microsoft/go-winio
@@ -142,8 +169,12 @@ github.com/containerd/ttrpc
 github.com/containerd/typeurl
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
+# github.com/dimchansky/utfbom v1.1.1
+github.com/dimchansky/utfbom
 # github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c
 github.com/docker/go-events
+# github.com/form3tech-oss/jwt-go v3.2.2+incompatible
+github.com/form3tech-oss/jwt-go
 # github.com/go-logr/logr v0.2.0
 github.com/go-logr/logr
 # github.com/gogo/googleapis v1.4.0
@@ -183,6 +214,8 @@ github.com/klauspost/compress/huff0
 github.com/klauspost/compress/snappy
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
+# github.com/mitchellh/go-homedir v1.1.0
+github.com/mitchellh/go-homedir
 # github.com/moby/sys/mountinfo v0.4.1
 github.com/moby/sys/mountinfo
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
@@ -235,7 +268,9 @@ go.opencensus.io/trace
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/propagation
 go.opencensus.io/trace/tracestate
-# golang.org/x/crypto v0.0.0-20201002170205-7f63de1d35b0
+# golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
+golang.org/x/crypto/pkcs12
+golang.org/x/crypto/pkcs12/internal/rc2
 golang.org/x/crypto/ssh/terminal
 # golang.org/x/net v0.0.0-20201224014010-6772e930b67b
 golang.org/x/net/context
@@ -255,9 +290,12 @@ golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
 # golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c
 golang.org/x/sys/internal/unsafeheader
+golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
+# golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1
+golang.org/x/term
 # golang.org/x/text v0.3.4
 golang.org/x/text/secure/bidirule
 golang.org/x/text/transform

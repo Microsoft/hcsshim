@@ -3,6 +3,9 @@ module github.com/Microsoft/hcsshim/test
 go 1.16
 
 require (
+	github.com/Azure/azure-sdk-for-go v52.4.0+incompatible
+	github.com/Azure/go-autorest/autorest v0.11.17
+	github.com/Azure/go-autorest/autorest/azure/auth v0.5.7
 	github.com/Microsoft/go-winio v0.4.17-0.20210211115548-6eac466e5fa3
 	github.com/Microsoft/hcsshim v0.8.15
 	github.com/containerd/containerd v1.5.0-beta.4
