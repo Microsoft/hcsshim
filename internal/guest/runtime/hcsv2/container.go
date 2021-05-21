@@ -66,6 +66,7 @@ func (c *Container) ExecProcess(ctx context.Context, process *oci.Process, conSe
 		return -1, err
 	}
 
+	process.Rlimits = c.spec.Process.Rlimits
 	p, err := c.container.ExecProcess(process, stdioSet)
 	if err != nil {
 		stdioSet.Close()

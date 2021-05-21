@@ -105,25 +105,53 @@ func prepareConfigDoc(ctx context.Context, uvm *UtilityVM, opts *OptionsWCOW, uv
 		},
 	}
 
+	var registryChanges hcsschema.RegistryChanges
+	// We're getting asked to setup local dump collection for WCOW. We need to:
+	//
+	// 1. Turn off WER reporting, so we don't both upload the dump and save a local copy.
+	// 2. Set WerSvc to start when the UVM starts to work around a bug when generating dumps for certain exceptions.
+	// https://github.com/microsoft/Windows-Containers/issues/60#issuecomment-834633192
+	// This supposedly should be fixed soon but for now keep this until we know which container images
+	// (1809, 1903/9, 2004 etc.) this went out too.
+	if opts.ProcessDumpLocation != "" {
+		registryChanges.AddValues = append(registryChanges.AddValues,
+			hcsschema.RegistryValue{
+				Key: &hcsschema.RegistryKey{
+					Hive: "System",
+					Name: "CurrentControl001\\Services\\WerSvc",
+				},
+				Name:       "Start",
+				DWordValue: 2,
+				Type_:      "DWord",
+			},
+			hcsschema.RegistryValue{
+				Key: &hcsschema.RegistryKey{
+					Hive: "Software",
+					Name: "Microsoft\\Windows\\Windows Error Reporting",
+				},
+				Name:       "Disabled",
+				DWordValue: 1,
+				Type_:      "DWord",
+			},
+		)
+	}
+
 	// Here for a temporary workaround until the need for setting this regkey is no more. To protect
 	// against any undesired behavior (such as some general networking scenarios ceasing to function)
 	// with a recent change to fix SMB share access in the UVM, this registry key will be checked to
 	// enable the change in question inside GNS.dll.
-	var registryChanges hcsschema.RegistryChanges
 	if !opts.DisableCompartmentNamespace {
-		registryChanges = hcsschema.RegistryChanges{
-			AddValues: []hcsschema.RegistryValue{
-				{
-					Key: &hcsschema.RegistryKey{
-						Hive: "System",
-						Name: "CurrentControlSet\\Services\\gns",
-					},
-					Name:       "EnableCompartmentNamespace",
-					DWordValue: 1,
-					Type_:      "DWord",
+		registryChanges.AddValues = append(registryChanges.AddValues,
+			hcsschema.RegistryValue{
+				Key: &hcsschema.RegistryKey{
+					Hive: "System",
+					Name: "CurrentControlSet\\Services\\gns",
 				},
+				Name:       "EnableCompartmentNamespace",
+				DWordValue: 1,
+				Type_:      "DWord",
 			},
-		}
+		)
 	}
 
 	processor := &hcsschema.Processor2{

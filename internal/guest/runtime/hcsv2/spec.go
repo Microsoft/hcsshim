@@ -48,6 +48,32 @@ func setProcess(spec *oci.Spec) {
 	}
 }
 
+func setCoreRLimit(spec *oci.Spec, value string) error {
+	setProcess(spec)
+
+	vals := strings.Split(value, ";")
+	if len(vals) != 2 {
+		return errors.New("wrong number of values supplied for rlimit core")
+	}
+
+	soft, err := strconv.ParseUint(vals[0], 10, 64)
+	if err != nil {
+		return err
+	}
+	hard, err := strconv.ParseUint(vals[1], 10, 64)
+	if err != nil {
+		return err
+	}
+
+	spec.Process.Rlimits = append(spec.Process.Rlimits, oci.POSIXRlimit{
+		Type: "RLIMIT_CORE",
+		Soft: soft,
+		Hard: hard,
+	})
+
+	return nil
+}
+
 // setUserStr sets `spec.Process` to the valid `userstr` based on the OCI Image Spec
 // v1.0.0 `userstr`.
 //

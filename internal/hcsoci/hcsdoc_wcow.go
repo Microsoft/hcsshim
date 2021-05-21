@@ -4,6 +4,7 @@ package hcsoci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -367,6 +368,49 @@ func createWindowsContainerDocument(ctx context.Context, coi *createOptionsInter
 		return nil, nil, err
 	}
 
+	// Setup WER registry keys for local process dump creation if specified.
+	// https://docs.microsoft.com/en-us/windows/win32/wer/collecting-user-mode-dumps
+	procDumpLoc := coi.Spec.Annotations[oci.AnnotationProcessDumpLocation]
+	if (coi.HostingSystem != nil && coi.HostingSystem.ProcessDumpLocation() != "") || procDumpLoc != "" {
+		// If a process dump path was specified at pod creation time for a hypervisor isolated pod, then
+		// use this value. If one was specified on the container creation document then override with this
+		// instead. Unlike Linux, Windows containers can set the dump path on a per container basis.
+		var dumpPath string
+		if coi.HostingSystem != nil {
+			dumpPath = coi.HostingSystem.ProcessDumpLocation()
+		} else {
+			dumpPath = procDumpLoc
+		}
+
+		dumpType, err := parseDumpType(coi.Spec.Annotations)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		v2Container.RegistryChanges = &hcsschema.RegistryChanges{
+			AddValues: []hcsschema.RegistryValue{
+				{
+					Key: &hcsschema.RegistryKey{
+						Hive: "Software",
+						Name: "Microsoft\\Windows\\Windows Error Reporting\\LocalDumps",
+					},
+					Name:        "DumpFolder",
+					StringValue: dumpPath,
+					Type_:       "String",
+				},
+				{
+					Key: &hcsschema.RegistryKey{
+						Hive: "Software",
+						Name: "Microsoft\\Windows\\Windows Error Reporting\\LocalDumps",
+					},
+					Name:       "DumpType",
+					DWordValue: dumpType,
+					Type_:      "DWord",
+				},
+			},
+		}
+	}
+
 	return v1, v2Container, nil
 }
 
@@ -396,4 +440,21 @@ func parseAssignedDevices(ctx context.Context, coi *createOptionsInternal, v2 *h
 	}
 	v2.AssignedDevices = v2AssignedDevices
 	return nil
+}
+
+// parseDumpType parses the passed in string representation of the local user mode process dump type to the
+// corresponding value the registry expects to be set.
+func parseDumpType(annotations map[string]string) (int32, error) {
+	dmpTypeStr := annotations[oci.AnnotationWCOWProcessDumpType]
+	switch dmpTypeStr {
+	case "":
+		// If no type specified, default to full dumps.
+		return 2, nil
+	case "mini":
+		return 1, nil
+	case "full":
+		return 2, nil
+	default:
+		return -1, errors.New(`unknown dump type specified, valid values are "mini" or "full"`)
+	}
 }

@@ -121,9 +121,13 @@ type UtilityVM struct {
 	// is true
 	TemplateID string
 
+	// Location that container process dumps will get written too.
+	processDumpLocation string
+
 	// The CreateOpts used to create this uvm. These can be either of type
 	// uvm.OptionsLCOW or uvm.OptionsWCOW
 	createOpts interface{}
+
 	// Network config proxy client. If nil then this wasn't requested and the
 	// uvms network will be configured locally.
 	ncProxyClient ncproxyttrpc.NetworkConfigProxyService

@@ -84,6 +84,7 @@ func readMemoryEvents(startTime time.Time, efdFile *os.File, cgName string, thre
 func main() {
 	startTime := time.Now()
 	logLevel := flag.String("loglevel", "debug", "Logging Level: debug, info, warning, error, fatal, panic.")
+	coreDumpLoc := flag.String("core-dump-location", "", "The location/format where process core dumps will be written to.")
 	kmsgLogLevel := flag.Uint("kmsgLogLevel", uint(kmsg.Warning), "Log all kmsg entries with a priority less than or equal to the supplied level.")
 	logFile := flag.String("logfile", "", "Logging Target: An optional file name/path. Omit for console output.")
 	logFormat := flag.String("log-format", "text", "Logging Format: text or json")
@@ -143,6 +144,19 @@ func main() {
 	baseLogPath := "/run/gcs/c"
 
 	logrus.Info("GCS started")
+
+	// Set the process core dump location. This will be global to all containers as it's a kernel configuration.
+	// If no path is specified core dumps will just be placed in the working directory of wherever the process
+	// was invoked to a file named "core".
+	if *coreDumpLoc != "" {
+		if err := ioutil.WriteFile(
+			"/proc/sys/kernel/core_pattern",
+			[]byte(*coreDumpLoc),
+			0644,
+		); err != nil {
+			logrus.WithError(err).Fatal("failed to set core dump location")
+		}
+	}
 
 	// Continuously log /dev/kmsg
 	go kmsg.ReadForever(kmsg.LogLevel(*kmsgLogLevel))

@@ -99,6 +99,12 @@ func setupSandboxContainerSpec(ctx context.Context, id string, spec *oci.Spec) (
 		}
 	}
 
+	if rlimCore := spec.Annotations["io.microsoft.lcow.rlimitcore"]; rlimCore != "" {
+		if err := setCoreRLimit(spec, rlimCore); err != nil {
+			return err
+		}
+	}
+
 	// TODO: JTERRY75 /dev/shm is not properly setup for LCOW I believe. CRI
 	// also has a concept of a sandbox/shm file when the IPC NamespaceMode !=
 	// NODE.
