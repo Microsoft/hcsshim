@@ -119,6 +119,7 @@ func setupMounts(ctx context.Context, coi *createOptionsInternal, r *resources.R
 		case "":
 		case "physical-disk":
 		case "virtual-disk":
+		case "extensible-virtual-disk":
 		default:
 			return fmt.Errorf("invalid OCI spec - Type '%s' not supported", mount.Type)
 		}
@@ -145,6 +146,13 @@ func setupMounts(ctx context.Context, coi *createOptionsInternal, r *resources.R
 				scsiMount, err := coi.HostingSystem.AddSCSI(ctx, mount.Source, uvmPath, readOnly, mount.Options, uvm.VMAccessTypeIndividual)
 				if err != nil {
 					return errors.Wrapf(err, "adding SCSI virtual disk mount %+v", mount)
+				}
+				r.Add(scsiMount)
+			} else if mount.Type == "extensible-virtual-disk" {
+				l.Debug("hcsshim::allocateWindowsResource Hot-adding ExtensibleVirtualDisk")
+				scsiMount, err := coi.HostingSystem.AddSCSIExtensibleVirtualDisk(ctx, mount.Source, uvmPath, readOnly)
+				if err != nil {
+					return errors.Wrapf(err, "adding SCSI EVD mount failed %+v", mount)
 				}
 				r.Add(scsiMount)
 			} else {

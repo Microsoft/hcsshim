@@ -292,7 +292,11 @@ func CreateWCOW(ctx context.Context, opts *OptionsWCOW) (_ *UtilityVM, err error
 			},
 		}
 
-		uvm.scsiLocations[0][0] = newSCSIMount(uvm, doc.VirtualMachine.Devices.Scsi["0"].Attachments["0"].Path, "", "", 1, 0, 0, false)
+		uvm.scsiLocations[0][0] = newSCSIMount(uvm,
+			doc.VirtualMachine.Devices.Scsi["0"].Attachments["0"].Path,
+			"",
+			doc.VirtualMachine.Devices.Scsi["0"].Attachments["0"].Type_,
+			"", 1, 0, 0, false)
 	} else {
 		doc.VirtualMachine.RestoreState = &hcsschema.RestoreState{}
 		doc.VirtualMachine.RestoreState.TemplateSystemId = opts.TemplateConfig.UVMID

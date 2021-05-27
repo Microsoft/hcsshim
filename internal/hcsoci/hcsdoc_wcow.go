@@ -61,8 +61,16 @@ func createMountsConfig(ctx context.Context, coi *createOptionsInternal) (*mount
 					return nil, fmt.Errorf("failed to eval symlinks for mount source %q: %s", mount.Source, err)
 				}
 				mdv2.HostPath = src
-			} else if mount.Type == "virtual-disk" || mount.Type == "physical-disk" {
-				uvmPath, err := coi.HostingSystem.GetScsiUvmPath(ctx, mount.Source)
+			} else if mount.Type == "virtual-disk" || mount.Type == "physical-disk" || mount.Type == "extensible-virtual-disk" {
+				mountPath := mount.Source
+				var err error
+				if mount.Type == "extensible-virtual-disk" {
+					_, mountPath, err = uvm.ParseExtensibleVirtualDiskPath(mount.Source)
+					if err != nil {
+						return nil, err
+					}
+				}
+				uvmPath, err := coi.HostingSystem.GetScsiUvmPath(ctx, mountPath)
 				if err != nil {
 					return nil, err
 				}
