@@ -3,13 +3,13 @@ package uvm
 import (
 	"context"
 
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
+	"github.com/pkg/errors"
 )
 
-// GuestRequest send an arbitrary guest request to the UVM.
+// GuestRequest sends an arbitrary guest request to the UVM.
 func (uvm *UtilityVM) GuestRequest(ctx context.Context, guestReq interface{}) error {
-	msr := &hcsschema.ModifySettingRequest{
-		GuestRequest: guestReq,
+	if err := uvm.gc.Modify(ctx, guestReq); err != nil {
+		return errors.Wrap(err, "guest modify request failed")
 	}
-	return uvm.modify(ctx, msr)
+	return nil
 }

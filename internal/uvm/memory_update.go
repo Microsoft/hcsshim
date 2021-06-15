@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Microsoft/hcsshim/internal/hcs/resourcepaths"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
+	"github.com/Microsoft/hcsshim/internal/vm"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -19,26 +19,27 @@ const (
 func (uvm *UtilityVM) UpdateMemory(ctx context.Context, sizeInBytes uint64) error {
 	requestedSizeInMB := sizeInBytes / bytesPerMB
 	actual := uvm.normalizeMemorySize(ctx, requestedSizeInMB)
-	req := &hcsschema.ModifySettingRequest{
-		ResourcePath: resourcepaths.MemoryResourcePath,
-		Settings:     actual,
+	mem, ok := uvm.vm.(vm.MemoryManager)
+	if !ok || !uvm.vm.Supported(vm.Memory, vm.Update) {
+		return errors.Wrap(vm.ErrNotSupported, "stopping update of memory")
 	}
-	return uvm.modify(ctx, req)
+	return mem.SetMemoryLimit(ctx, actual)
 }
 
 // GetAssignedMemoryInBytes returns the amount of assigned memory for the UVM in bytes
 func (uvm *UtilityVM) GetAssignedMemoryInBytes(ctx context.Context) (uint64, error) {
-	props, err := uvm.hcsSystem.PropertiesV2(ctx, hcsschema.PTMemory)
+	stats, err := uvm.vm.Stats(ctx)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to fetch Utility VM stats")
 	}
-	if props.Memory == nil {
+	if stats.Memory == nil {
 		return 0, fmt.Errorf("no memory properties returned for system %s", uvm.id)
 	}
-	if props.Memory.VirtualMachineMemory == nil {
+
+	if stats.Memory.VmMemory == nil {
 		return 0, fmt.Errorf("no virtual memory properties returned for system %s", uvm.id)
 	}
-	pages := props.Memory.VirtualMachineMemory.AssignedMemory
+	pages := stats.Memory.VmMemory.AssignedMemory
 	if pages == 0 {
 		return 0, fmt.Errorf("assigned memory returned should not be 0 for system %s", uvm.id)
 	}

@@ -10,17 +10,18 @@ import (
 	"strings"
 
 	"github.com/Microsoft/hcsshim/internal/ncproxyttrpc"
+	"github.com/Microsoft/hcsshim/internal/vm"
+	"github.com/Microsoft/hcsshim/internal/vm/hcs"
+	"github.com/Microsoft/hcsshim/internal/vm/remotevm"
 	"github.com/containerd/ttrpc"
 
 	"github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/pkg/guid"
 	"github.com/Microsoft/hcsshim/internal/gcs"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/logfields"
 	"github.com/Microsoft/hcsshim/internal/oc"
 	"github.com/Microsoft/hcsshim/internal/processorinfo"
-	"github.com/Microsoft/hcsshim/internal/schemaversion"
 	"github.com/Microsoft/hcsshim/osversion"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -137,7 +138,7 @@ func NewDefaultOptionsLCOW(id, owner string) *OptionsLCOW {
 	return opts
 }
 
-// CreateLCOW creates an HCS compute system representing a utility VM.
+// CreateLCOW creates a Linux Utility VM.
 func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error) {
 	ctx, span := trace.StartSpan(ctx, "uvm::CreateLCOW")
 	defer span.End()
@@ -182,6 +183,7 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 	if _, err := os.Stat(kernelFullPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("kernel: '%s' not found", kernelFullPath)
 	}
+
 	rootfsFullPath := filepath.Join(opts.BootFilesPath, opts.RootFSFile)
 	if _, err := os.Stat(rootfsFullPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("boot file: '%s' not found", rootfsFullPath)
@@ -196,6 +198,28 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 		return nil, fmt.Errorf("failed to get host processor information: %s", err)
 	}
 
+	var (
+		uvmb  vm.UVMBuilder
+		cOpts []vm.CreateOpt
+	)
+	switch opts.VMSource {
+	case vm.HCS:
+		uvmb, err = hcs.NewUVMBuilder(uvm.id, uvm.owner, vm.Linux)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create UVM builder")
+		}
+		cOpts = applyHcsOpts(opts)
+	case vm.RemoteVM:
+		uvmb, err = remotevm.NewUVMBuilder(ctx, uvm.id, uvm.owner, opts.VMServicePath, opts.VMServiceAddress, vm.Linux)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create UVM builder")
+		}
+		cOpts = applyRemoteVMOpts(opts.Options)
+	default:
+		return nil, fmt.Errorf("unknown VM source: %s", opts.VMSource)
+	}
+	uvm.builder = uvmb
+
 	// To maintain compatability with Docker we need to automatically downgrade
 	// a user CPU count if the setting is not possible.
 	uvm.processorCount = uvm.normalizeProcessorCount(ctx, opts.ProcessorCount, processorTopology)
@@ -203,71 +227,82 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 	// Align the requested memory size.
 	memorySizeInMB := uvm.normalizeMemorySize(ctx, opts.MemorySizeInMB)
 
-	processor := &hcsschema.Processor2{
-		Count:  uvm.processorCount,
-		Limit:  opts.ProcessorLimit,
-		Weight: opts.ProcessorWeight,
-	}
 	// We can set a cpu group for the VM at creation time in recent builds.
 	if opts.CPUGroupID != "" {
 		if osversion.Build() < cpuGroupCreateBuild {
 			return nil, errCPUGroupCreateNotSupported
 		}
-		processor.CpuGroup = &hcsschema.CpuGroup{Id: opts.CPUGroupID}
+		windows, ok := uvmb.(vm.WindowsConfigManager)
+		if !ok {
+			return nil, errors.Wrap(vm.ErrNotSupported, "stopping cpu group setup")
+		}
+		if err := windows.SetCPUGroup(ctx, opts.CPUGroupID); err != nil {
+			return nil, err
+		}
 	}
 
-	doc := &hcsschema.ComputeSystem{
-		Owner:                             uvm.owner,
-		SchemaVersion:                     schemaversion.SchemaV21(),
-		ShouldTerminateOnLastHandleClosed: true,
-		VirtualMachine: &hcsschema.VirtualMachine{
-			StopOnReset: true,
-			Chipset:     &hcsschema.Chipset{},
-			ComputeTopology: &hcsschema.Topology{
-				Memory: &hcsschema.Memory2{
-					SizeInMB:              memorySizeInMB,
-					AllowOvercommit:       opts.AllowOvercommit,
-					EnableDeferredCommit:  opts.EnableDeferredCommit,
-					EnableColdDiscardHint: opts.EnableColdDiscardHint,
-					LowMMIOGapInMB:        opts.LowMMIOGapInMB,
-					HighMMIOBaseInMB:      opts.HighMMIOBaseInMB,
-					HighMMIOGapInMB:       opts.HighMMIOGapInMB,
-				},
-				Processor: processor,
-			},
-			Devices: &hcsschema.Devices{
-				HvSocket: &hcsschema.HvSocket2{
-					HvSocketConfig: &hcsschema.HvSocketSystemConfig{
-						// Allow administrators and SYSTEM to bind to vsock sockets
-						// so that we can create a GCS log socket.
-						DefaultBindSecurityDescriptor: "D:P(A;;FA;;;SY)(A;;FA;;;BA)",
-					},
-				},
-				Plan9: &hcsschema.Plan9{},
-			},
-		},
+	mem, ok := uvmb.(vm.MemoryManager)
+	if !ok {
+		return nil, errors.Wrap(vm.ErrNotSupported, "stopping memory setup")
+	}
+
+	if err := mem.SetMemoryLimit(ctx, memorySizeInMB); err != nil {
+		return nil, errors.Wrap(err, "failed to set memory limit")
+	}
+
+	backingType := vm.MemoryBackingTypeVirtual
+	if !opts.AllowOvercommit {
+		backingType = vm.MemoryBackingTypePhysical
+	}
+
+	if err := mem.SetMemoryConfig(&vm.MemoryConfig{
+		BackingType:     backingType,
+		DeferredCommit:  opts.EnableDeferredCommit,
+		ColdDiscardHint: opts.EnableColdDiscardHint,
+		HotHint:         opts.AllowOvercommit,
+	}); err != nil {
+		return nil, errors.Wrap(err, "failed to set memory config")
+	}
+
+	proc, ok := uvmb.(vm.ProcessorManager)
+	if !ok {
+		return nil, errors.Wrap(vm.ErrNotSupported, "stopping processor setup")
+	}
+
+	if err := proc.SetProcessorCount(uint32(uvm.processorCount)); err != nil {
+		return nil, errors.Wrap(err, "failed to set processor count")
 	}
 
 	// Handle StorageQoS if set
 	if opts.StorageQoSBandwidthMaximum > 0 || opts.StorageQoSIopsMaximum > 0 {
-		doc.VirtualMachine.StorageQoS = &hcsschema.StorageQoS{
-			IopsMaximum:      opts.StorageQoSIopsMaximum,
-			BandwidthMaximum: opts.StorageQoSBandwidthMaximum,
+		storage, ok := uvmb.(vm.StorageQosManager)
+		if !ok {
+			return nil, errors.Wrap(vm.ErrNotSupported, "stopping storageqos setup")
+		}
+		if err := storage.SetStorageQos(int64(opts.StorageQoSIopsMaximum), int64(opts.StorageQoSBandwidthMaximum)); err != nil {
+			return nil, errors.Wrap(err, "failed to set storage qos config")
 		}
 	}
 
 	if uvm.scsiControllerCount > 0 {
-		// TODO: JTERRY75 - this should enumerate scsicount and add an entry per value.
-		doc.VirtualMachine.Devices.Scsi = map[string]hcsschema.Scsi{
-			"0": {
-				Attachments: make(map[string]hcsschema.Attachment),
-			},
+		scsi, ok := uvmb.(vm.SCSIManager)
+		if !ok {
+			return nil, errors.Wrap(vm.ErrNotSupported, "stopping SCSI setup")
+		}
+		for i := 0; i < int(uvm.scsiControllerCount); i++ {
+			if err := scsi.AddSCSIController(uint32(i)); err != nil {
+				return nil, errors.Wrap(err, "failed to add scsi controller")
+			}
 		}
 	}
+
 	if uvm.vpmemMaxCount > 0 {
-		doc.VirtualMachine.Devices.VirtualPMem = &hcsschema.VirtualPMemController{
-			MaximumCount:     uvm.vpmemMaxCount,
-			MaximumSizeBytes: uvm.vpmemMaxSizeBytes,
+		vpmem, ok := uvmb.(vm.VPMemManager)
+		if !ok {
+			return nil, errors.Wrap(vm.ErrNotSupported, "stopping VPMem setup")
+		}
+		if err := vpmem.AddVPMemController(uvm.vpmemMaxCount, uvm.vpmemMaxSizeBytes); err != nil {
+			return nil, errors.Wrap(err, "failed to add VPMem controller")
 		}
 	}
 
@@ -280,17 +315,19 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 	case PreferredRootFSTypeVHD:
 		// Support for VPMem VHD(X) booting rather than initrd..
 		kernelArgs = "root=/dev/pmem0 ro rootwait init=/init"
-		imageFormat := "Vhd1"
+		imageFormat := vm.VPMemImageFormatVHD1
 		if strings.ToLower(filepath.Ext(opts.RootFSFile)) == "vhdx" {
-			imageFormat = "Vhdx"
+			imageFormat = vm.VPMemImageFormatVHDX
 		}
-		doc.VirtualMachine.Devices.VirtualPMem.Devices = map[string]hcsschema.VirtualPMemDevice{
-			"0": {
-				HostPath:    rootfsFullPath,
-				ReadOnly:    true,
-				ImageFormat: imageFormat,
-			},
+
+		vpmem, ok := uvmb.(vm.VPMemManager)
+		if !ok {
+			return nil, errors.Wrap(vm.ErrNotSupported, "stopping VPMem setup")
 		}
+		if err := vpmem.AddVPMemDevice(ctx, 0, rootfsFullPath, true, imageFormat); err != nil {
+			return nil, errors.Wrap(err, "failed to add vpmem disk")
+		}
+
 		// Add to our internal structure
 		uvm.vpmemDevices[0] = &vpmemInfo{
 			hostPath: opts.RootFSFile,
@@ -303,21 +340,17 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 	if opts.ConsolePipe != "" {
 		vmDebugging = true
 		kernelArgs += " 8250_core.nr_uarts=1 8250_core.skip_txen_test=1 console=ttyS0,115200"
-		doc.VirtualMachine.Devices.ComPorts = map[string]hcsschema.ComPort{
-			"0": { // Which is actually COM1
-				NamedPipe: opts.ConsolePipe,
-			},
+
+		serial, ok := uvm.vm.(vm.SerialManager)
+		if !ok {
+			return nil, errors.Wrap(vm.ErrNotSupported, "stopping serial console setup")
+		}
+
+		if err := serial.SetSerialConsole(0, opts.ConsolePipe); err != nil {
+			return nil, errors.Wrap(err, "failed to add serial console config")
 		}
 	} else {
 		kernelArgs += " 8250_core.nr_uarts=0"
-	}
-
-	if opts.EnableGraphicsConsole {
-		vmDebugging = true
-		kernelArgs += " console=tty"
-		doc.VirtualMachine.Devices.Keyboard = &hcsschema.Keyboard{}
-		doc.VirtualMachine.Devices.EnhancedModeVideo = &hcsschema.EnhancedModeVideo{}
-		doc.VirtualMachine.Devices.VideoMonitor = &hcsschema.VideoMonitor{}
 	}
 
 	if !vmDebugging {
@@ -358,32 +391,31 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 	kernelArgs += fmt.Sprintf(" nr_cpus=%d", opts.ProcessorCount)
 	kernelArgs += ` brd.rd_nr=0 pmtmr=0 -- ` + initArgs
 
-	if !opts.KernelDirect {
-		doc.VirtualMachine.Chipset.Uefi = &hcsschema.Uefi{
-			BootThis: &hcsschema.UefiBootEntry{
-				DevicePath:    `\` + opts.KernelFile,
-				DeviceType:    "VmbFs",
-				VmbFsRootPath: opts.BootFilesPath,
-				OptionalData:  kernelArgs,
-			},
+	boot, ok := uvmb.(vm.BootManager)
+	if !ok {
+		return nil, errors.Wrap(vm.ErrNotSupported, "stopping boot configuration")
+	}
+	if opts.KernelDirect {
+		var initFS string
+		if opts.PreferredRootFSType == PreferredRootFSTypeInitRd {
+			initFS = rootfsFullPath
+		}
+		if err := boot.SetLinuxKernelDirectBoot(kernelFullPath, initFS, kernelArgs); err != nil {
+			return nil, errors.Wrap(err, "failed to set Linux kernel direct boot")
 		}
 	} else {
-		doc.VirtualMachine.Chipset.LinuxKernelDirect = &hcsschema.LinuxKernelDirect{
-			KernelFilePath: kernelFullPath,
-			KernelCmdLine:  kernelArgs,
-		}
-		if opts.PreferredRootFSType == PreferredRootFSTypeInitRd {
-			doc.VirtualMachine.Chipset.LinuxKernelDirect.InitRdPath = rootfsFullPath
+		if err := boot.SetUEFIBoot(opts.BootFilesPath, opts.KernelFile, kernelArgs); err != nil {
+			return nil, errors.Wrap(err, "failed to set UEFI boot")
 		}
 	}
 
-	err = uvm.create(ctx, doc)
+	uvm.vm, err = uvmb.Create(ctx, cOpts)
 	if err != nil {
-		return nil, fmt.Errorf("error while creating the compute system: %s", err)
+		return nil, errors.Wrap(err, "failed to create virtual machine")
 	}
 
 	// Cerate a socket to inject entropy during boot.
-	uvm.entropyListener, err = uvm.listenVsock(entropyVsockPort)
+	uvm.entropyListener, err = uvm.listenVsock(ctx, entropyVsockPort)
 	if err != nil {
 		return nil, err
 	}
@@ -393,15 +425,15 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 	if opts.ForwardStdout || opts.ForwardStderr {
 		uvm.outputHandler = opts.OutputHandler
 		uvm.outputProcessingDone = make(chan struct{})
-		uvm.outputListener, err = uvm.listenVsock(linuxLogVsockPort)
+		uvm.outputListener, err = uvm.listenVsock(ctx, linuxLogVsockPort)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if opts.UseGuestConnection {
-		log.G(ctx).WithField("vmID", uvm.runtimeID).Debug("Using external GCS bridge")
-		l, err := uvm.listenVsock(gcs.LinuxGcsVsockPort)
+		log.G(ctx).WithField("vmID", uvm.vm.VmID()).Debug("Using external GCS bridge")
+		l, err := uvm.listenVsock(ctx, gcs.LinuxGcsVsockPort)
 		if err != nil {
 			return nil, err
 		}
@@ -421,9 +453,10 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 	return uvm, nil
 }
 
-func (uvm *UtilityVM) listenVsock(port uint32) (net.Listener, error) {
-	return winio.ListenHvsock(&winio.HvsockAddr{
-		VMID:      uvm.runtimeID,
-		ServiceID: winio.VsockServiceID(port),
-	})
+func (uvm *UtilityVM) listenVsock(ctx context.Context, port uint32) (net.Listener, error) {
+	vmsocket, ok := uvm.vm.(vm.VMSocketManager)
+	if !ok {
+		return nil, errors.Wrap(vm.ErrNotSupported, "stopping vm socket configuration")
+	}
+	return vmsocket.VMSocketListen(ctx, vm.HvSocket, winio.VsockServiceID(port))
 }

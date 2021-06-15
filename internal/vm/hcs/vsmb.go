@@ -10,17 +10,18 @@ import (
 )
 
 func (uvmb *utilityVMBuilder) AddVSMB(ctx context.Context, path string, name string, allowed []string, options *vm.VSMBOptions) error {
-	uvmb.doc.VirtualMachine.Devices.VirtualSmb = &hcsschema.VirtualSmb{
-		DirectFileMappingInMB: 1024, // Sensible default, but could be a tuning parameter somewhere
-		Shares: []hcsschema.VirtualSmbShare{
-			{
-				Name:         name,
-				Path:         path,
-				AllowedFiles: allowed,
-				Options:      vmVSMBOptionsToHCS(options),
-			},
-		},
+	if uvmb.doc.VirtualMachine.Devices.VirtualSmb == nil {
+		uvmb.doc.VirtualMachine.Devices.VirtualSmb = &hcsschema.VirtualSmb{}
 	}
+
+	uvmb.doc.VirtualMachine.Devices.VirtualSmb.Shares = append(uvmb.doc.VirtualMachine.Devices.VirtualSmb.Shares,
+		hcsschema.VirtualSmbShare{
+			Name:         name,
+			Path:         path,
+			AllowedFiles: allowed,
+			Options:      vmVSMBOptionsToHCS(options),
+		},
+	)
 	return nil
 }
 
@@ -38,6 +39,9 @@ func vmVSMBOptionsToHCS(options *vm.VSMBOptions) *hcsschema.VirtualSmbShareOptio
 		TakeBackupPrivilege: options.TakeBackupPrivilege,
 		PseudoOplocks:       options.PseudoOplocks,
 		PseudoDirnotify:     options.PseudoDirnotify,
+		NoLocks:             options.NoLocks,
+		RestrictFileAccess:  options.RestrictFileAccess,
+		SingleFileMapping:   options.SingleFileMapping,
 	}
 }
 

@@ -5,12 +5,11 @@ import (
 	"fmt"
 
 	"github.com/Microsoft/hcsshim/internal/cow"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
+	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/pkg/errors"
 )
 
 const (
-	hcsComputeSystemSaveType = "AsTemplate"
 	// default namespace ID used for all template and clone VMs.
 	DEFAULT_CLONE_NETWORK_NAMESPACE_ID = "89EB8A86-E253-41FD-9800-E6D88EB2E18A"
 )
@@ -55,8 +54,8 @@ type Cloneable interface {
 // A struct to keep all the information that might be required during cloning process of
 // a resource.
 type cloneData struct {
-	// doc spec for the clone
-	doc *hcsschema.ComputeSystem
+	// Builder for the virtual machine document.
+	builder vm.UVMBuilder
 	// scratchFolder of the clone
 	scratchFolder string
 	// UVMID of the clone
@@ -112,14 +111,10 @@ func (uvm *UtilityVM) GenerateTemplateConfig() (*UVMTemplateConfig, error) {
 // uvm must be in the paused state before it can be saved as a template.save call will throw
 // an incorrect uvm state exception if uvm is not in the paused state at the time of saving.
 func (uvm *UtilityVM) SaveAsTemplate(ctx context.Context) error {
-	if err := uvm.hcsSystem.Pause(ctx); err != nil {
+	if err := uvm.vm.Pause(ctx); err != nil {
 		return errors.Wrap(err, "error pausing the VM")
 	}
-
-	saveOptions := hcsschema.SaveOptions{
-		SaveType: hcsComputeSystemSaveType,
-	}
-	if err := uvm.hcsSystem.Save(ctx, saveOptions); err != nil {
+	if err := uvm.vm.Save(ctx); err != nil {
 		return errors.Wrap(err, "error saving the VM")
 	}
 	return nil

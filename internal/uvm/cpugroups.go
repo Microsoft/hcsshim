@@ -2,12 +2,11 @@ package uvm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/Microsoft/hcsshim/internal/cpugroup"
-	"github.com/Microsoft/hcsshim/internal/hcs/resourcepaths"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
+	"github.com/Microsoft/hcsshim/internal/vm"
+	"github.com/pkg/errors"
 )
 
 // Build that assigning a cpu group on creation of a vm is supported
@@ -33,16 +32,11 @@ func (uvm *UtilityVM) SetCPUGroup(ctx context.Context, id string) error {
 
 // setCPUGroup sets the VM's cpugroup
 func (uvm *UtilityVM) setCPUGroup(ctx context.Context, id string) error {
-	req := &hcsschema.ModifySettingRequest{
-		ResourcePath: resourcepaths.CPUGroupResourcePath,
-		Settings: &hcsschema.CpuGroup{
-			Id: id,
-		},
+	windows, ok := uvm.vm.(vm.WindowsConfigManager)
+	if !ok {
+		return errors.Wrap(vm.ErrNotSupported, "stopping cpu group operation")
 	}
-	if err := uvm.modify(ctx, req); err != nil {
-		return err
-	}
-	return nil
+	return windows.SetCPUGroup(ctx, id)
 }
 
 // unsetCPUGroup sets the VM's cpugroup to the null group ID

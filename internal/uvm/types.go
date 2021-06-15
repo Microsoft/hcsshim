@@ -6,13 +6,11 @@ import (
 	"net"
 	"sync"
 
-	"github.com/Microsoft/go-winio/pkg/guid"
 	"github.com/Microsoft/hcsshim/internal/gcs"
-	"github.com/Microsoft/hcsshim/internal/hcs"
 	"github.com/Microsoft/hcsshim/internal/hcs/schema1"
 	"github.com/Microsoft/hcsshim/internal/hns"
 	"github.com/Microsoft/hcsshim/internal/ncproxyttrpc"
-	"golang.org/x/sys/windows"
+	"github.com/Microsoft/hcsshim/internal/vm"
 )
 
 //                    | WCOW | LCOW
@@ -40,11 +38,11 @@ type namespaceInfo struct {
 
 // UtilityVM is the object used by clients representing a utility VM
 type UtilityVM struct {
+	builder          vm.UVMBuilder        // Object used to construct the Utility VM configuration document
+	vm               vm.UVM               // Underlying interface to the virtstack used to launch the UVM.
 	id               string               // Identifier for the utility VM (user supplied or generated)
-	runtimeID        guid.GUID            // Hyper-V VM ID
 	owner            string               // Owner for the utility VM (user supplied or generated)
 	operatingSystem  string               // "windows" or "linux"
-	hcsSystem        *hcs.System          // The handle to the compute system
 	gcListener       net.Listener         // The GCS connection listener
 	gc               *gcs.GuestConnection // The GCS connection
 	processorCount   int32
@@ -101,15 +99,6 @@ type UtilityVM struct {
 	outputHandler        OutputHandler
 
 	entropyListener net.Listener
-
-	// Handle to the vmmem process associated with this UVM. Used to look up
-	// memory metrics for the UVM.
-	vmmemProcess windows.Handle
-	// Tracks the error returned when looking up the vmmem process.
-	vmmemErr error
-	// We only need to look up the vmmem process once, then we keep a handle
-	// open.
-	vmmemOnce sync.Once
 
 	// mountCounter is the number of mounts that have been added to the UVM
 	// This is used in generating a unique mount path inside the UVM for every mount.

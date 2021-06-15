@@ -2,23 +2,23 @@ package uvm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 
 	"github.com/Microsoft/hcsshim/internal/cow"
-	"github.com/Microsoft/hcsshim/internal/hcs"
 	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/logfields"
 	"github.com/Microsoft/hcsshim/internal/oc"
-	"github.com/Microsoft/hcsshim/internal/schemaversion"
+	"github.com/Microsoft/hcsshim/internal/vm"
+	"github.com/Microsoft/hcsshim/internal/vm/hcs"
+	"github.com/Microsoft/hcsshim/internal/vm/remotevm"
 	"github.com/Microsoft/hcsshim/osversion"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"go.opencensus.io/trace"
-	"golang.org/x/sys/windows"
 )
 
 // Options are the set of options passed to Create() to create a utility vm.
@@ -80,11 +80,56 @@ type Options struct {
 	// CPUGroupID set the ID of a CPUGroup on the host that the UVM should be added to on start.
 	// Defaults to an empty string which indicates the UVM should not be added to any CPUGroup.
 	CPUGroupID string
+
 	// NetworkConfigProxy holds the address of the network config proxy service.
 	// This != "" determines whether to start the ComputeAgent TTRPC service
 	// that receives the UVMs set of NICs from this proxy instead of enumerating
 	// the endpoints locally.
 	NetworkConfigProxy string
+
+	// VMSource is a string signifying what virtstack to use to launch a utility VM.
+	// 1. hcs - The default if no option set explicitly.
+	// 2. remotevm - Talk to another virtstack that implements the vmservice ttrpc interface to launch
+	// VMs.
+	VMSource string
+
+	// VMServiceAddress specifies the address to connect to talk to a process implementing the vmservice
+	// ttrpc interface.
+	VMServiceAddress string
+
+	// VMServicePath specifies the path on disk of the binary to launch that implements the vmservice ttrpc
+	// interface. If this is omitted and VMServiceAddress is present, it's inferred that the binary is already
+	// up and running and another instance isn't needed. If there needs to be a new instance per virtual machine
+	// launched by the service, this will have to be provided.
+	VMServicePath string
+
+	// IgnoreSupportedCheck ignores any capability checks for virtstack functionality.
+	IgnoreSupportedCheck bool
+}
+
+func applyHcsOpts(opts interface{}) []vm.CreateOpt {
+	var hcsOpts []vm.CreateOpt
+	switch opts := opts.(type) {
+	case *OptionsLCOW:
+	case *OptionsWCOW:
+		if !opts.DisableCompartmentNamespace {
+			hcsOpts = append(hcsOpts, hcs.WithEnableCompartmentNamespace())
+		}
+		if opts.IsClone {
+			if opts.TemplateConfig != nil {
+				hcsOpts = append(hcsOpts, hcs.WithCloneConfig(opts.TemplateConfig.UVMID))
+			}
+		}
+	}
+	return hcsOpts
+}
+
+func applyRemoteVMOpts(opts *Options) []vm.CreateOpt {
+	var remoteVMOpts []vm.CreateOpt
+	if opts.IgnoreSupportedCheck {
+		remoteVMOpts = append(remoteVMOpts, remotevm.WithIgnoreSupported())
+	}
+	return remoteVMOpts
 }
 
 // compares the create opts used during template creation with the create opts
@@ -178,6 +223,7 @@ func newDefaultOptions(id, owner string) *Options {
 		EnableDeferredCommit:  false,
 		ProcessorCount:        defaultProcessorCount(),
 		FullyPhysicallyBacked: false,
+		VMSource:              vm.HCS,
 	}
 
 	if opts.Owner == "" {
@@ -189,7 +235,7 @@ func newDefaultOptions(id, owner string) *Options {
 
 // ID returns the ID of the VM's compute system.
 func (uvm *UtilityVM) ID() string {
-	return uvm.hcsSystem.ID()
+	return uvm.vm.ID()
 }
 
 // OS returns the operating system of the utility VM.
@@ -197,33 +243,8 @@ func (uvm *UtilityVM) OS() string {
 	return uvm.operatingSystem
 }
 
-func (uvm *UtilityVM) create(ctx context.Context, doc interface{}) error {
-	uvm.exitCh = make(chan struct{})
-	system, err := hcs.CreateComputeSystem(ctx, uvm.id, doc)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if system != nil {
-			_ = system.Terminate(ctx)
-			_ = system.Wait()
-		}
-	}()
-
-	// Cache the VM ID of the utility VM.
-	properties, err := system.Properties(ctx)
-	if err != nil {
-		return err
-	}
-	uvm.runtimeID = properties.RuntimeID
-	uvm.hcsSystem = system
-	system = nil
-
-	log.G(ctx).WithFields(logrus.Fields{
-		logfields.UVMID: uvm.id,
-		"runtime-id":    uvm.runtimeID.String(),
-	}).Debug("created utility VM")
-	return nil
+func (uvm *UtilityVM) VM() vm.UVM {
+	return uvm.vm
 }
 
 // Close terminates and releases resources associated with the utility VM.
@@ -233,10 +254,8 @@ func (uvm *UtilityVM) Close() (err error) {
 	defer func() { oc.SetSpanStatus(span, err) }()
 	span.AddAttributes(trace.StringAttribute(logfields.UVMID, uvm.id))
 
-	windows.Close(uvm.vmmemProcess)
-
-	if uvm.hcsSystem != nil {
-		_ = uvm.hcsSystem.Terminate(ctx)
+	if uvm.vm != nil {
+		_ = uvm.vm.Stop(ctx)
 		_ = uvm.Wait()
 	}
 
@@ -252,8 +271,9 @@ func (uvm *UtilityVM) Close() (err error) {
 		uvm.outputListener.Close()
 		uvm.outputListener = nil
 	}
-	if uvm.hcsSystem != nil {
-		return uvm.hcsSystem.Close()
+
+	if uvm.vm != nil {
+		return uvm.vm.Close()
 	}
 	return nil
 }
@@ -267,18 +287,7 @@ func (uvm *UtilityVM) CreateContainer(ctx context.Context, id string, settings i
 		}
 		return c, nil
 	}
-	doc := hcsschema.ComputeSystem{
-		HostingSystemId:                   uvm.id,
-		Owner:                             uvm.owner,
-		SchemaVersion:                     schemaversion.SchemaV21(),
-		ShouldTerminateOnLastHandleClosed: true,
-		HostedSystem:                      settings,
-	}
-	c, err := hcs.CreateComputeSystem(ctx, id, &doc)
-	if err != nil {
-		return nil, err
-	}
-	return c, err
+	return nil, errors.New("no guest connection available to create container")
 }
 
 // CreateProcess creates a process in the utility VM.
@@ -286,7 +295,7 @@ func (uvm *UtilityVM) CreateProcess(ctx context.Context, settings interface{}) (
 	if uvm.gc != nil {
 		return uvm.gc.CreateProcess(ctx, settings)
 	}
-	return uvm.hcsSystem.CreateProcess(ctx, settings)
+	return nil, errors.New("no guest connection available to create process")
 }
 
 // IsOCI returns false, indicating the parameters to CreateProcess should not
@@ -297,12 +306,12 @@ func (uvm *UtilityVM) IsOCI() bool {
 
 // Terminate requests that the utility VM be terminated.
 func (uvm *UtilityVM) Terminate(ctx context.Context) error {
-	return uvm.hcsSystem.Terminate(ctx)
+	return uvm.vm.Stop(ctx)
 }
 
 // ExitError returns an error if the utility VM has terminated unexpectedly.
 func (uvm *UtilityVM) ExitError() error {
-	return uvm.hcsSystem.ExitError()
+	return uvm.vm.ExitError()
 }
 
 func defaultProcessorCount() int32 {

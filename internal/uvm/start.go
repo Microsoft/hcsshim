@@ -15,11 +15,11 @@ import (
 
 	"github.com/Microsoft/hcsshim/internal/gcs"
 	"github.com/Microsoft/hcsshim/internal/guestrequest"
-	"github.com/Microsoft/hcsshim/internal/hcs/schema1"
 	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/logfields"
 	"github.com/Microsoft/hcsshim/internal/requesttype"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
@@ -119,7 +119,7 @@ func parseLogrus(vmid string) func(r io.Reader) {
 }
 
 // When using an external GCS connection it is necessary to send a ModifySettings request
-// for HvSockt so that the GCS can setup some registry keys that are required for running
+// for HvSocket so that the GCS can setup some registry keys that are required for running
 // containers inside the UVM. In non external GCS connection scenarios this is done by the
 // HCS immediately after the GCS connection is done. Since, we are using the external GCS
 // connection we should do that setup here after we connect with the GCS.
@@ -128,24 +128,17 @@ func (uvm *UtilityVM) configureHvSocketForGCS(ctx context.Context) (err error) {
 	if uvm.OS() != "windows" {
 		return nil
 	}
-
-	hvsocketAddress := &hcsschema.HvSocketAddress{
-		LocalAddress:  uvm.runtimeID.String(),
-		ParentAddress: gcs.WindowsGcsHvHostID.String(),
-	}
-
-	conSetupReq := &hcsschema.ModifySettingRequest{
-		GuestRequest: guestrequest.GuestRequest{
-			RequestType:  requesttype.Update,
-			ResourceType: guestrequest.ResourceTypeHvSocket,
-			Settings:     hvsocketAddress,
+	guestReq := guestrequest.GuestRequest{
+		RequestType:  requesttype.Update,
+		ResourceType: guestrequest.ResourceTypeHvSocket,
+		Settings: &hcsschema.HvSocketAddress{
+			LocalAddress:  uvm.vm.VmID(),
+			ParentAddress: gcs.WindowsGcsHvHostID.String(),
 		},
 	}
-
-	if err = uvm.modify(ctx, conSetupReq); err != nil {
-		return fmt.Errorf("failed to configure HVSOCK for external GCS: %s", err)
+	if err := uvm.GuestRequest(ctx, guestReq); err != nil {
+		return errors.Wrap(err, "failed to configure HVSOCK for external GCS")
 	}
-
 	return nil
 }
 
@@ -194,24 +187,21 @@ func (uvm *UtilityVM) Start(ctx context.Context) (err error) {
 		})
 	}
 
-	err = uvm.hcsSystem.Start(ctx)
+	err = uvm.vm.Start(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if err != nil {
-			_ = uvm.hcsSystem.Terminate(ctx)
-			_ = uvm.hcsSystem.Wait()
+			_ = uvm.vm.Stop(ctx)
+			_ = uvm.vm.Wait()
 		}
 	}()
 
 	// Start waiting on the utility VM.
 	uvm.exitCh = make(chan struct{})
 	go func() {
-		err := uvm.hcsSystem.Wait()
-		if err == nil {
-			err = uvm.hcsSystem.ExitError()
-		}
+		err := uvm.vm.Wait()
 		uvm.exitErr = err
 		close(uvm.exitCh)
 	}()
@@ -231,9 +221,11 @@ func (uvm *UtilityVM) Start(ctx context.Context) (err error) {
 		}
 		// Start the GCS protocol.
 		gcc := &gcs.GuestConnectionConfig{
-			Conn:     conn,
-			Log:      log.G(ctx).WithField(logfields.UVMID, uvm.id),
-			IoListen: gcs.HvsockIoListen(uvm.runtimeID),
+			Conn: conn,
+			Log:  log.G(ctx).WithField(logfields.UVMID, uvm.id),
+			IoListen: func(port uint32) (net.Listener, error) {
+				return uvm.listenVsock(context.Background(), port)
+			},
 		}
 		uvm.gc, err = gcc.Connect(ctx, !uvm.IsClone)
 		if err != nil {
@@ -244,16 +236,8 @@ func (uvm *UtilityVM) Start(ctx context.Context) (err error) {
 
 		// initial setup required for external GCS connection
 		if err = uvm.configureHvSocketForGCS(ctx); err != nil {
-			return fmt.Errorf("failed to do initial GCS setup: %s", err)
+			return errors.Wrap(err, "failed to do initial GCS setup")
 		}
-	} else {
-		// Cache the guest connection properties.
-		properties, err := uvm.hcsSystem.Properties(ctx, schema1.PropertyTypeGuestConnection)
-		if err != nil {
-			return err
-		}
-		uvm.guestCaps = properties.GuestConnectionInfo.GuestDefinedCapabilities
-		uvm.protocol = properties.GuestConnectionInfo.ProtocolVersion
 	}
 
 	return nil

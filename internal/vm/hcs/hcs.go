@@ -16,6 +16,7 @@ var _ vm.UVM = &utilityVM{}
 
 type utilityVM struct {
 	id           string
+	owner        string
 	guestOS      vm.GuestOS
 	cs           *hcs.System
 	backingType  vm.MemoryBackingType
@@ -29,6 +30,10 @@ func (uvm *utilityVM) ID() string {
 	return uvm.id
 }
 
+func (uvm *utilityVM) VmID() string {
+	return uvm.vmID.String()
+}
+
 func (uvm *utilityVM) Start(ctx context.Context) (err error) {
 	if err := uvm.cs.Start(ctx); err != nil {
 		return errors.Wrap(err, "failed to start utility VM")
@@ -39,6 +44,14 @@ func (uvm *utilityVM) Start(ctx context.Context) (err error) {
 func (uvm *utilityVM) Stop(ctx context.Context) error {
 	if err := uvm.cs.Terminate(ctx); err != nil {
 		return errors.Wrap(err, "failed to terminate utility VM")
+	}
+	return nil
+}
+
+func (uvm *utilityVM) Close() error {
+	_ = windows.Close(uvm.vmmemProcess)
+	if err := uvm.cs.Close(); err != nil {
+		return errors.Wrap(err, "failed to close Utility VM")
 	}
 	return nil
 }

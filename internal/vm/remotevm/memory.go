@@ -1,11 +1,13 @@
 package remotevm
 
 import (
+	"context"
+
 	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/Microsoft/hcsshim/internal/vmservice"
 )
 
-func (uvmb *utilityVMBuilder) SetMemoryLimit(memoryMB uint64) error {
+func (uvmb *utilityVMBuilder) SetMemoryLimit(ctx context.Context, memoryMB uint64) error {
 	if uvmb.config.MemoryConfig == nil {
 		uvmb.config.MemoryConfig = &vmservice.MemoryConfig{}
 	}
@@ -22,7 +24,7 @@ func (uvmb *utilityVMBuilder) SetMemoryConfig(config *vm.MemoryConfig) error {
 	uvmb.config.MemoryConfig.ColdDiscardHint = config.ColdDiscardHint
 	uvmb.config.MemoryConfig.DeferredCommit = config.DeferredCommit
 	uvmb.config.MemoryConfig.HotHint = config.HotHint
-	return vm.ErrNotSupported
+	return nil
 }
 
 func (uvmb *utilityVMBuilder) SetMMIOConfig(lowGapMB uint64, highBaseMB uint64, highGapMB uint64) error {

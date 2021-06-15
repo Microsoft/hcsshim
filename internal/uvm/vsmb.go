@@ -10,12 +10,12 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/Microsoft/hcsshim/internal/hcs/resourcepaths"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/requesttype"
+	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/Microsoft/hcsshim/internal/winapi"
 	"github.com/Microsoft/hcsshim/osversion"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
 )
@@ -34,7 +34,7 @@ type VSMBShare struct {
 	name            string
 	allowedFiles    []string
 	guestPath       string
-	options         hcsschema.VirtualSmbShareOptions
+	options         vm.VSMBOptions
 	serialVersionID uint32
 }
 
@@ -48,9 +48,9 @@ func (vsmb *VSMBShare) Release(ctx context.Context) error {
 
 // DefaultVSMBOptions returns the default VSMB options. If readOnly is specified,
 // returns the default VSMB options for a readonly share.
-func (uvm *UtilityVM) DefaultVSMBOptions(readOnly bool) *hcsschema.VirtualSmbShareOptions {
-	opts := &hcsschema.VirtualSmbShareOptions{
-		NoDirectmap: uvm.DevicesPhysicallyBacked() || uvm.VSMBNoDirectMap(),
+func (uvm *UtilityVM) DefaultVSMBOptions(readOnly bool) *vm.VSMBOptions {
+	opts := &vm.VSMBOptions{
+		NoDirectMap: uvm.DevicesPhysicallyBacked() || uvm.VSMBNoDirectMap(),
 	}
 	if readOnly {
 		opts.ShareRead = true
@@ -61,7 +61,7 @@ func (uvm *UtilityVM) DefaultVSMBOptions(readOnly bool) *hcsschema.VirtualSmbSha
 	return opts
 }
 
-func (uvm *UtilityVM) SetSaveableVSMBOptions(opts *hcsschema.VirtualSmbShareOptions, readOnly bool) {
+func (uvm *UtilityVM) SetSaveableVSMBOptions(opts *vm.VSMBOptions, readOnly bool) {
 	if readOnly {
 		opts.ShareRead = true
 		opts.CacheIo = true
@@ -79,7 +79,7 @@ func (uvm *UtilityVM) SetSaveableVSMBOptions(opts *hcsschema.VirtualSmbShareOpti
 	}
 	opts.NoLocks = true
 	opts.PseudoDirnotify = true
-	opts.NoDirectmap = true
+	opts.NoDirectMap = true
 }
 
 // findVSMBShare finds a share by `hostPath`. If not found returns `ErrNotAttached`.
@@ -157,7 +157,7 @@ func forceNoDirectMap(path string) (bool, error) {
 // AddVSMB adds a VSMB share to a Windows utility VM. Each VSMB share is ref-counted and
 // only added if it isn't already. This is used for read-only layers, mapped directories
 // to a container, and for mapped pipes.
-func (uvm *UtilityVM) AddVSMB(ctx context.Context, hostPath string, options *hcsschema.VirtualSmbShareOptions) (*VSMBShare, error) {
+func (uvm *UtilityVM) AddVSMB(ctx context.Context, hostPath string, options *vm.VSMBOptions) (*VSMBShare, error) {
 	if uvm.operatingSystem != "windows" {
 		return nil, errNotSupported
 	}
@@ -190,7 +190,7 @@ func (uvm *UtilityVM) AddVSMB(ctx context.Context, hostPath string, options *hcs
 		return nil, err
 	} else if force {
 		log.G(ctx).WithField("path", hostPath).Info("Forcing NoDirectmap for VSMB mount")
-		options.NoDirectmap = true
+		options.NoDirectMap = true
 	}
 
 	var requestType = requesttype.Update
@@ -225,18 +225,13 @@ func (uvm *UtilityVM) AddVSMB(ctx context.Context, hostPath string, options *hcs
 			"options":   fmt.Sprintf("%+#v", options),
 			"operation": requestType,
 		}).Info("Modifying VSMB share")
-		modification := &hcsschema.ModifySettingRequest{
-			RequestType: requestType,
-			Settings: hcsschema.VirtualSmbShare{
-				Name:         share.name,
-				Options:      options,
-				Path:         hostPath,
-				AllowedFiles: newAllowedFiles,
-			},
-			ResourcePath: resourcepaths.VSMBShareResourcePath,
+
+		vsmb, ok := uvm.vm.(vm.VSMBManager)
+		if !ok || !uvm.vm.Supported(vm.VSMB, vm.Add) {
+			return nil, errors.Wrap(vm.ErrNotSupported, "stopping vsmb share add")
 		}
-		if err := uvm.modify(ctx, modification); err != nil {
-			return nil, err
+		if err := vsmb.AddVSMB(ctx, hostPath, share.name, newAllowedFiles, options); err != nil {
+			return nil, errors.Wrap(err, "failed to add vsmb share")
 		}
 	}
 
@@ -278,15 +273,13 @@ func (uvm *UtilityVM) RemoveVSMB(ctx context.Context, hostPath string, readOnly 
 		return nil
 	}
 
-	modification := &hcsschema.ModifySettingRequest{
-		RequestType:  requesttype.Remove,
-		Settings:     hcsschema.VirtualSmbShare{Name: share.name},
-		ResourcePath: resourcepaths.VSMBShareResourcePath,
+	vsmb, ok := uvm.vm.(vm.VSMBManager)
+	if !ok || !uvm.vm.Supported(vm.VSMB, vm.Remove) {
+		return errors.Wrap(vm.ErrNotSupported, "stopping vsmb share removal")
 	}
-	if err := uvm.modify(ctx, modification); err != nil {
-		return fmt.Errorf("failed to remove vsmb share %s from %s: %+v: %s", hostPath, uvm.id, modification, err)
+	if err := vsmb.RemoveVSMB(ctx, share.name); err != nil {
+		return errors.Wrapf(err, "failed to remove vsmb share %s from %s", hostPath, uvm.id)
 	}
-
 	delete(m, shareKey)
 	return nil
 }
@@ -380,20 +373,21 @@ func (vsmb *VSMBShare) GobDecode(data []byte) error {
 	return nil
 }
 
-// Clone creates a clone of the VSMBShare `vsmb` and adds that clone to the uvm `vm`.  To
+// Clone creates a clone of the VSMBShare `vsmb` and adds that clone to the uvm `vm`. To
 // clone VSMB share we just need to add it into the config doc of that VM and increase the
 // vsmb counter.
-func (vsmb *VSMBShare) Clone(ctx context.Context, vm *UtilityVM, cd *cloneData) error {
-	cd.doc.VirtualMachine.Devices.VirtualSmb.Shares = append(cd.doc.VirtualMachine.Devices.VirtualSmb.Shares, hcsschema.VirtualSmbShare{
-		Name:         vsmb.name,
-		Path:         vsmb.HostPath,
-		Options:      &vsmb.options,
-		AllowedFiles: vsmb.allowedFiles,
-	})
-	vm.vsmbCounter++
+func (vsmb *VSMBShare) Clone(ctx context.Context, uvm *UtilityVM, cd *cloneData) error {
+	vsmbMgr, ok := cd.builder.(vm.VSMBManager)
+	if !ok {
+		return errors.Wrap(vm.ErrNotSupported, "stopping vsmb share operation")
+	}
+	if err := vsmbMgr.AddVSMB(ctx, vsmb.HostPath, vsmb.name, vsmb.allowedFiles, &vsmb.options); err != nil {
+		return err
+	}
+	uvm.vsmbCounter++
 
 	clonedVSMB := &VSMBShare{
-		vm:              vm,
+		vm:              uvm,
 		HostPath:        vsmb.HostPath,
 		refCount:        1,
 		name:            vsmb.name,
@@ -404,11 +398,10 @@ func (vsmb *VSMBShare) Clone(ctx context.Context, vm *UtilityVM, cd *cloneData) 
 	}
 
 	if vsmb.options.RestrictFileAccess {
-		vm.vsmbFileShares[vsmb.HostPath] = clonedVSMB
+		uvm.vsmbFileShares[vsmb.HostPath] = clonedVSMB
 	} else {
-		vm.vsmbDirShares[vsmb.HostPath] = clonedVSMB
+		uvm.vsmbDirShares[vsmb.HostPath] = clonedVSMB
 	}
-
 	return nil
 }
 

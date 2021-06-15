@@ -14,10 +14,13 @@ import (
 
 func (uvmb *utilityVMBuilder) AddSCSIController(id uint32) error {
 	if uvmb.doc.VirtualMachine.Devices.Scsi == nil {
-		uvmb.doc.VirtualMachine.Devices.Scsi = make(map[string]hcsschema.Scsi, 1)
+		uvmb.doc.VirtualMachine.Devices.Scsi = make(map[string]hcsschema.Scsi)
 	}
-	uvmb.doc.VirtualMachine.Devices.Scsi[strconv.Itoa(int(id))] = hcsschema.Scsi{
-		Attachments: make(map[string]hcsschema.Attachment),
+	conStr := strconv.Itoa(int(id))
+	if _, ok := uvmb.doc.VirtualMachine.Devices.Scsi[conStr]; !ok {
+		uvmb.doc.VirtualMachine.Devices.Scsi[conStr] = hcsschema.Scsi{
+			Attachments: map[string]hcsschema.Attachment{},
+		}
 	}
 	return nil
 }
@@ -32,9 +35,13 @@ func (uvmb *utilityVMBuilder) AddSCSIDisk(ctx context.Context, controller uint32
 		return fmt.Errorf("no scsi controller with index %d found", controller)
 	}
 
+	scsiType, err := getSCSIDiskTypeString(typ)
+	if err != nil {
+		return err
+	}
 	ctrl.Attachments[strconv.Itoa(int(lun))] = hcsschema.Attachment{
 		Path:     path,
-		Type_:    string(typ),
+		Type_:    scsiType,
 		ReadOnly: readOnly,
 	}
 

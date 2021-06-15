@@ -8,6 +8,7 @@ import (
 
 	"github.com/Microsoft/go-winio/pkg/guid"
 	"github.com/Microsoft/hcsshim/hcn"
+	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/Microsoft/hcsshim/internal/vmservice"
 	"github.com/pkg/errors"
 )
@@ -115,6 +116,9 @@ func (uvm *utilityVM) RemoveNIC(ctx context.Context, nicID, endpointID, macAddr 
 	); err != nil {
 		return errors.Wrap(err, "failed to remove network adapter")
 	}
-
 	return nil
+}
+
+func (uvm *utilityVM) UpdateNIC(ctx context.Context, nicID string, nic *vm.NetworkAdapter) error {
+	return vm.ErrNotSupported
 }

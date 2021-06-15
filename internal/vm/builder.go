@@ -4,10 +4,15 @@ import (
 	"context"
 )
 
+// CreateOpt can be used to apply virtstack specific settings during creation time.
+type CreateOpt func(ctx context.Context, uvmb UVMBuilder) error
+
 type UVMBuilder interface {
 	// Create will create the Utility VM in a paused/powered off state with whatever is present in the implementation
 	// of the interfaces config at the time of the call.
-	Create(ctx context.Context) (UVM, error)
+	//
+	// `opts` can be used to set virtstack specific configurations for the Utility VM.
+	Create(ctx context.Context, opts []CreateOpt) (UVM, error)
 }
 
 type MemoryBackingType uint8
@@ -29,7 +34,7 @@ type MemoryConfig struct {
 // MemoryManager handles setting and managing memory configurations for the Utility VM.
 type MemoryManager interface {
 	// SetMemoryLimit sets the amount of memory in megabytes that the Utility VM will be assigned.
-	SetMemoryLimit(memoryMB uint64) error
+	SetMemoryLimit(ctx context.Context, memoryMB uint64) error
 	// SetMemoryConfig sets an array of different memory configuration options available. This includes things like the
 	// type of memory to back the VM (virtual/physical).
 	SetMemoryConfig(config *MemoryConfig) error
@@ -37,10 +42,19 @@ type MemoryManager interface {
 	SetMMIOConfig(lowGapMB uint64, highBaseMB uint64, highGapMB uint64) error
 }
 
+// ProcessorLimits is used when modifying processor scheduling limits of a virtual machine.
+type ProcessorLimits struct {
+	// Maximum amount of host CPU resources that the virtual machine can use.
+	Limit uint64
+	// Value describing the relative priority of this virtual machine compared to other virtual machines.
+	Weight uint64
+}
+
 // ProcessorManager handles setting and managing processor configurations for the Utility VM.
 type ProcessorManager interface {
 	// SetProcessorCount sets the number of virtual processors that will be assigned to the Utility VM.
 	SetProcessorCount(count uint32) error
+	SetProcessorLimits(ctx context.Context, limits *ProcessorLimits) error
 }
 
 // SerialManager manages setting up serial consoles for the Utility VM.

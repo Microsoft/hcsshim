@@ -9,6 +9,7 @@ import (
 
 	"github.com/Microsoft/hcsshim/internal/jobobject"
 	"github.com/Microsoft/hcsshim/internal/log"
+	"github.com/Microsoft/hcsshim/internal/logfields"
 	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/Microsoft/hcsshim/internal/vmservice"
 	"github.com/containerd/ttrpc"
@@ -20,14 +21,15 @@ import (
 var _ vm.UVMBuilder = &utilityVMBuilder{}
 
 type utilityVMBuilder struct {
-	id      string
-	guestOS vm.GuestOS
-	job     *jobobject.JobObject
-	config  *vmservice.VMConfig
-	client  vmservice.VMService
+	id, binpath, addr string
+	guestOS           vm.GuestOS
+	ignoreSupported   bool
+	job               *jobobject.JobObject
+	config            *vmservice.VMConfig
+	client            vmservice.VMService
 }
 
-func NewUVMBuilder(ctx context.Context, id, owner, binPath, addr string, guestOS vm.GuestOS) (vm.UVMBuilder, error) {
+func NewUVMBuilder(ctx context.Context, id, owner, binPath, addr string, guestOS vm.GuestOS) (_ vm.UVMBuilder, err error) {
 	var job *jobobject.JobObject
 	if binPath != "" {
 		log.G(ctx).WithFields(logrus.Fields{
@@ -38,9 +40,21 @@ func NewUVMBuilder(ctx context.Context, id, owner, binPath, addr string, guestOS
 		opts := &jobobject.Options{
 			Name: id,
 		}
-		job, err := jobobject.Create(ctx, opts)
+		job, err = jobobject.Create(ctx, opts)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create job object for remotevm process")
+		}
+
+		if err := job.SetTerminateOnLastHandleClose(); err != nil {
+			return nil, errors.Wrap(err, "failed to set terminate on last handle closed for remotevm job object")
+		}
+
+		// If no address passed, just generate a random one.
+		if addr == "" {
+			addr, err = randomUnixSockAddr()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		cmd := exec.Command(binPath, "--ttrpc", addr)
@@ -55,10 +69,6 @@ func NewUVMBuilder(ctx context.Context, id, owner, binPath, addr string, guestOS
 
 		if err := job.Assign(uint32(cmd.Process.Pid)); err != nil {
 			return nil, errors.Wrap(err, "failed to assign remotevm process to job")
-		}
-
-		if err := job.SetTerminateOnLastHandleClose(); err != nil {
-			return nil, errors.Wrap(err, "failed to set terminate on last handle closed for remotevm job object")
 		}
 
 		// Wait for stdout to close. This is our signal that the server is successfully up and running.
@@ -88,22 +98,44 @@ func NewUVMBuilder(ctx context.Context, id, owner, binPath, addr string, guestOS
 	}, nil
 }
 
-func (uvmb *utilityVMBuilder) Create(ctx context.Context) (vm.UVM, error) {
-	// Grab what capabilities the virtstack supports up front.
-	capabilities, err := uvmb.client.CapabilitiesVM(ctx, &ptypes.Empty{})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get virtstack capabilities from vmservice")
+func (uvmb *utilityVMBuilder) Create(ctx context.Context, opts []vm.CreateOpt) (_ vm.UVM, err error) {
+	// Apply any opts
+	for _, o := range opts {
+		if err := o(ctx, uvmb); err != nil {
+			return nil, errors.Wrap(err, "failed applying create options for Utility VM")
+		}
 	}
 
-	if _, err := uvmb.client.CreateVM(ctx, &vmservice.CreateVMRequest{Config: uvmb.config, LogID: uvmb.id}); err != nil {
+	var capabilities *vmservice.CapabilitiesVMResponse
+	if !uvmb.ignoreSupported {
+		// Grab what capabilities the virtstack supports up front.
+		capabilities, err = uvmb.client.CapabilitiesVM(ctx, &ptypes.Empty{})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get virtstack capabilities from vmservice")
+		}
+	}
+
+	_, err = uvmb.client.CreateVM(ctx, &vmservice.CreateVMRequest{Config: uvmb.config, LogID: uvmb.id})
+	if err != nil {
 		return nil, errors.Wrap(err, "failed to create remote VM")
 	}
 
-	return &utilityVM{
-		id:           uvmb.id,
-		job:          uvmb.job,
-		config:       uvmb.config,
-		client:       uvmb.client,
-		capabilities: capabilities,
-	}, nil
+	log.G(ctx).WithFields(logrus.Fields{
+		logfields.UVMID:         uvmb.id,
+		"vmservice-address":     uvmb.addr,
+		"vmservice-binary-path": uvmb.binpath,
+	}).Debug("created utility VM")
+
+	uvm := &utilityVM{
+		id:              uvmb.id,
+		job:             uvmb.job,
+		waitBlock:       make(chan struct{}),
+		ignoreSupported: uvmb.ignoreSupported,
+		config:          uvmb.config,
+		client:          uvmb.client,
+		capabilities:    capabilities,
+	}
+
+	go uvm.waitBackground()
+	return uvm, nil
 }

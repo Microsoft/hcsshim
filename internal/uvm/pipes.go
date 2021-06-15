@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Microsoft/hcsshim/internal/hcs/resourcepaths"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
-	"github.com/Microsoft/hcsshim/internal/requesttype"
+	"github.com/Microsoft/hcsshim/internal/vm"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/pkg/errors"
 )
 
 const pipePrefix = `\\.\pipe\`
@@ -30,24 +29,24 @@ func (pipe *PipeMount) Release(ctx context.Context) error {
 
 // AddPipe shares a named pipe into the UVM.
 func (uvm *UtilityVM) AddPipe(ctx context.Context, hostPath string) (*PipeMount, error) {
-	modification := &hcsschema.ModifySettingRequest{
-		RequestType:  requesttype.Add,
-		ResourcePath: fmt.Sprintf(resourcepaths.MappedPipeResourceFormat, hostPath),
+	pipe, ok := uvm.vm.(vm.PipeManager)
+	if !ok || !uvm.vm.Supported(vm.Pipe, vm.Add) {
+		return nil, errors.Wrap(vm.ErrNotSupported, "stopping pipe mount add")
 	}
-	if err := uvm.modify(ctx, modification); err != nil {
-		return nil, err
+	if err := pipe.AddPipe(ctx, hostPath); err != nil {
+		return nil, errors.Wrap(err, "failed to add pipe mount")
 	}
 	return &PipeMount{uvm, hostPath}, nil
 }
 
 // RemovePipe removes a shared named pipe from the UVM.
 func (uvm *UtilityVM) RemovePipe(ctx context.Context, hostPath string) error {
-	modification := &hcsschema.ModifySettingRequest{
-		RequestType:  requesttype.Remove,
-		ResourcePath: fmt.Sprintf(resourcepaths.MappedPipeResourceFormat, hostPath),
+	pipe, ok := uvm.vm.(vm.PipeManager)
+	if !ok || !uvm.vm.Supported(vm.Pipe, vm.Remove) {
+		return errors.Wrap(vm.ErrNotSupported, "stopping pipe mount removal")
 	}
-	if err := uvm.modify(ctx, modification); err != nil {
-		return err
+	if err := pipe.RemovePipe(ctx, hostPath); err != nil {
+		return errors.Wrap(err, "failed to remove pipe mount")
 	}
 	return nil
 }

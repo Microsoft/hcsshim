@@ -6,8 +6,8 @@ import (
 
 	"github.com/Microsoft/go-winio"
 	"github.com/Microsoft/hcsshim/internal/computeagent"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/hns"
+	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/Microsoft/hcsshim/pkg/octtrpc"
 	"github.com/containerd/ttrpc"
 	"github.com/pkg/errors"
@@ -69,16 +69,16 @@ func (ca *computeAgent) ModifyNIC(ctx context.Context, req *computeagent.ModifyN
 		return nil, errors.Wrapf(err, "failed to get endpoint with name `%s`", req.EndpointName)
 	}
 
-	moderationValue := hcsschema.InterruptModerationValue(req.IovPolicySettings.InterruptModeration)
-	moderationName := hcsschema.InterruptModerationValueToName[moderationValue]
+	moderationValue := vm.InterruptModerationValue(req.IovPolicySettings.InterruptModeration)
+	moderationName := vm.InterruptModerationValueToName[moderationValue]
 
-	iovSettings := &hcsschema.IovSettings{
+	iovSettings := &vm.IovSettings{
 		OffloadWeight:       &req.IovPolicySettings.IovOffloadWeight,
 		QueuePairsRequested: &req.IovPolicySettings.QueuePairsRequested,
 		InterruptModeration: &moderationName,
 	}
 
-	nic := &hcsschema.NetworkAdapter{
+	nic := &vm.NetworkAdapter{
 		EndpointId:  endpoint.Id,
 		MacAddress:  endpoint.MacAddress,
 		IovSettings: iovSettings,

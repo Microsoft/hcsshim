@@ -2,10 +2,14 @@ package hcs
 
 import (
 	"context"
+	"fmt"
 	"net"
 
 	"github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/pkg/guid"
+	"github.com/Microsoft/hcsshim/internal/hcs/resourcepaths"
+	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
+	"github.com/Microsoft/hcsshim/internal/requesttype"
 	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/pkg/errors"
 )
@@ -27,6 +31,23 @@ func (uvm *utilityVM) VMSocketListen(ctx context.Context, listenType vm.VMSocket
 	default:
 		return nil, errors.New("unknown vmsocket type requested")
 	}
+}
+
+func (uvm *utilityVM) UpdateVMSocket(ctx context.Context, socketType vm.VMSocketType, sid string, serviceConfig *vm.HvSocketServiceConfig) error {
+	if socketType != vm.HvSocket {
+		return vm.ErrNotSupported
+	}
+	request := &hcsschema.ModifySettingRequest{
+		RequestType:  requesttype.Update,
+		ResourcePath: fmt.Sprintf(resourcepaths.HvSocketConfigResourceFormat, sid),
+		Settings: &hcsschema.HvSocketServiceConfig{
+			BindSecurityDescriptor:    serviceConfig.BindSecurityDescriptor,
+			ConnectSecurityDescriptor: serviceConfig.ConnectSecurityDescriptor,
+			Disabled:                  serviceConfig.Disabled,
+			AllowWildcardBinds:        serviceConfig.AllowWildcardBinds,
+		},
+	}
+	return uvm.cs.Modify(ctx, request)
 }
 
 func (uvm *utilityVM) hvSocketListen(ctx context.Context, serviceID guid.GUID) (net.Listener, error) {

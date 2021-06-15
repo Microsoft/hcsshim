@@ -8,15 +8,13 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/Microsoft/go-winio/pkg/security"
 	"github.com/Microsoft/hcsshim/internal/copyfile"
 	"github.com/Microsoft/hcsshim/internal/guestrequest"
-	"github.com/Microsoft/hcsshim/internal/hcs/resourcepaths"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/requesttype"
+	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/Microsoft/hcsshim/internal/wclayer"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -172,11 +170,7 @@ func (uvm *UtilityVM) RemoveSCSI(ctx context.Context, hostPath string) error {
 		return nil
 	}
 
-	scsiModification := &hcsschema.ModifySettingRequest{
-		RequestType:  requesttype.Remove,
-		ResourcePath: fmt.Sprintf(resourcepaths.SCSIResourceFormat, strconv.Itoa(sm.Controller), sm.LUN),
-	}
-
+	var guestReq guestrequest.GuestRequest
 	// Include the GuestRequest so that the GCS ejects the disk cleanly if the
 	// disk was attached/mounted
 	//
@@ -184,7 +178,7 @@ func (uvm *UtilityVM) RemoveSCSI(ctx context.Context, hostPath string) error {
 	// so that we synchronize the guest state. This seems to always avoid SCSI
 	// related errors if this index quickly reused by another container.
 	if uvm.operatingSystem == "windows" && sm.UVMPath != "" {
-		scsiModification.GuestRequest = guestrequest.GuestRequest{
+		guestReq = guestrequest.GuestRequest{
 			ResourceType: guestrequest.ResourceTypeMappedVirtualDisk,
 			RequestType:  requesttype.Remove,
 			Settings: guestrequest.WCOWMappedVirtualDisk{
@@ -193,7 +187,7 @@ func (uvm *UtilityVM) RemoveSCSI(ctx context.Context, hostPath string) error {
 			},
 		}
 	} else {
-		scsiModification.GuestRequest = guestrequest.GuestRequest{
+		guestReq = guestrequest.GuestRequest{
 			ResourceType: guestrequest.ResourceTypeMappedVirtualDisk,
 			RequestType:  requesttype.Remove,
 			Settings: guestrequest.LCOWMappedVirtualDisk{
@@ -204,9 +198,17 @@ func (uvm *UtilityVM) RemoveSCSI(ctx context.Context, hostPath string) error {
 		}
 	}
 
-	if err := uvm.modify(ctx, scsiModification); err != nil {
-		return fmt.Errorf("failed to remove SCSI disk %s from container %s: %s", hostPath, uvm.id, err)
+	scsi, ok := uvm.vm.(vm.SCSIManager)
+	if !ok || !uvm.vm.Supported(vm.SCSI, vm.Remove) {
+		return errors.Wrap(vm.ErrNotSupported, "stopping SCSI disk removal")
 	}
+	if err := uvm.GuestRequest(ctx, guestReq); err != nil {
+		return errors.Wrap(err, "failed guest request to remove SCSI disk: %s")
+	}
+	if err := scsi.RemoveSCSIDisk(ctx, uint32(sm.Controller), uint32(sm.LUN), hostPath); err != nil {
+		return errors.Wrap(err, "failed to remove SCSI disk")
+	}
+
 	log.G(ctx).WithFields(sm.logFormat()).Debug("removed SCSI location")
 	uvm.scsiLocations[sm.Controller][sm.LUN] = nil
 	return nil
@@ -287,18 +289,9 @@ func (uvm *UtilityVM) addSCSIActual(ctx context.Context, hostPath, uvmPath, atta
 		return nil, ErrTooManyAttachments
 	}
 
-	SCSIModification := &hcsschema.ModifySettingRequest{
-		RequestType: requesttype.Add,
-		Settings: hcsschema.Attachment{
-			Path:     sm.HostPath,
-			Type_:    attachmentType,
-			ReadOnly: readOnly,
-		},
-		ResourcePath: fmt.Sprintf(resourcepaths.SCSIResourceFormat, strconv.Itoa(sm.Controller), sm.LUN),
-	}
-
+	var guestReq guestrequest.GuestRequest
 	if sm.UVMPath != "" {
-		guestReq := guestrequest.GuestRequest{
+		guestReq = guestrequest.GuestRequest{
 			ResourceType: guestrequest.ResourceTypeMappedVirtualDisk,
 			RequestType:  requesttype.Add,
 		}
@@ -317,11 +310,34 @@ func (uvm *UtilityVM) addSCSIActual(ctx context.Context, hostPath, uvmPath, atta
 				Options:    guestOptions,
 			}
 		}
-		SCSIModification.GuestRequest = guestReq
 	}
 
-	if err := uvm.modify(ctx, SCSIModification); err != nil {
-		return nil, fmt.Errorf("failed to modify UVM with new SCSI mount: %s", err)
+	var diskType vm.SCSIDiskType
+	switch attachmentType {
+	case "VirtualDisk":
+		switch ext := filepath.Ext(sm.HostPath); ext {
+		case ".vhd":
+			diskType = vm.SCSIDiskTypeVHD1
+		case ".vhdx":
+			diskType = vm.SCSIDiskTypeVHDX
+		default:
+			return nil, fmt.Errorf("unsupported extension for virtual disk: %s", ext)
+		}
+	case "PassThru":
+		diskType = vm.SCSIDiskTypePassThrough
+	default:
+		return nil, fmt.Errorf("unsupported SCSI disk type: %s", attachmentType)
+	}
+
+	scsi, ok := uvm.vm.(vm.SCSIManager)
+	if !ok || !uvm.vm.Supported(vm.SCSI, vm.Add) {
+		return nil, errors.Wrap(vm.ErrNotSupported, "stopping SCSI disk add")
+	}
+	if err := scsi.AddSCSIDisk(ctx, uint32(sm.Controller), uint32(sm.LUN), sm.HostPath, diskType, readOnly); err != nil {
+		return nil, errors.Wrap(err, "failed to add SCSI disk")
+	}
+	if err := uvm.GuestRequest(ctx, guestReq); err != nil {
+		return nil, errors.Wrap(err, "failed guest request to add SCSI disk: %s")
 	}
 	return sm, nil
 }
@@ -454,13 +470,11 @@ func (sm *SCSIMount) GobDecode(data []byte) error {
 // the uvm `vm`. If `sm` is read only then it is simply added to the `vm`. But if it is a
 // writeable mount(e.g a scratch layer) then a copy of it is made and that copy is added
 // to the `vm`.
-func (sm *SCSIMount) Clone(ctx context.Context, vm *UtilityVM, cd *cloneData) error {
+func (sm *SCSIMount) Clone(ctx context.Context, uvm *UtilityVM, cd *cloneData) error {
 	var (
 		dstVhdPath string = sm.HostPath
 		err        error
 		dir        string
-		conStr     string = fmt.Sprintf("%d", sm.Controller)
-		lunStr     string = fmt.Sprintf("%d", sm.LUN)
 	)
 
 	if !sm.readOnly {
@@ -509,25 +523,26 @@ func (sm *SCSIMount) Clone(ctx context.Context, vm *UtilityVM, cd *cloneData) er
 		}
 	}
 
-	if cd.doc.VirtualMachine.Devices.Scsi == nil {
-		cd.doc.VirtualMachine.Devices.Scsi = map[string]hcsschema.Scsi{}
+	scsiMgr, ok := cd.builder.(vm.SCSIManager)
+	if !ok {
+		return errors.Wrap(vm.ErrNotSupported, "stopping scsi operation")
+	}
+	if err := scsiMgr.AddSCSIController(uint32(sm.Controller)); err != nil {
+		return err
+	}
+	if err := scsiMgr.AddSCSIDisk(
+		ctx,
+		uint32(sm.Controller),
+		uint32(sm.LUN),
+		dstVhdPath,
+		vm.SCSIDiskTypeVHDX,
+		sm.readOnly,
+	); err != nil {
+		return err
 	}
 
-	if _, ok := cd.doc.VirtualMachine.Devices.Scsi[conStr]; !ok {
-		cd.doc.VirtualMachine.Devices.Scsi[conStr] = hcsschema.Scsi{
-			Attachments: map[string]hcsschema.Attachment{},
-		}
-	}
-
-	cd.doc.VirtualMachine.Devices.Scsi[conStr].Attachments[lunStr] = hcsschema.Attachment{
-		Path:  dstVhdPath,
-		Type_: sm.attachmentType,
-	}
-
-	clonedScsiMount := newSCSIMount(vm, dstVhdPath, sm.UVMPath, sm.attachmentType, 1, sm.Controller, sm.LUN, sm.readOnly)
-
-	vm.scsiLocations[sm.Controller][sm.LUN] = clonedScsiMount
-
+	clonedScsiMount := newSCSIMount(uvm, dstVhdPath, sm.UVMPath, sm.attachmentType, 1, sm.Controller, sm.LUN, sm.readOnly)
+	uvm.scsiLocations[sm.Controller][sm.LUN] = clonedScsiMount
 	return nil
 }
 

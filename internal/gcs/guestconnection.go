@@ -12,8 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Microsoft/go-winio"
-	"github.com/Microsoft/go-winio/pkg/guid"
 	"github.com/Microsoft/hcsshim/internal/cow"
 	"github.com/Microsoft/hcsshim/internal/hcs/schema1"
 	"github.com/Microsoft/hcsshim/internal/log"
@@ -33,17 +31,6 @@ const (
 // IoListenFunc is a type for a function that creates a listener for a VM for
 // the vsock port `port`.
 type IoListenFunc func(port uint32) (net.Listener, error)
-
-// HvsockIoListen returns an implementation of IoListenFunc that listens
-// on the specified vsock port for the VM specified by `vmID`.
-func HvsockIoListen(vmID guid.GUID) IoListenFunc {
-	return func(port uint32) (net.Listener, error) {
-		return winio.ListenHvsock(&winio.HvsockAddr{
-			VMID:      vmID,
-			ServiceID: winio.VsockServiceID(port),
-		})
-	}
-}
 
 // GuestConnectionConfig contains options for creating a guest connection.
 type GuestConnectionConfig struct {

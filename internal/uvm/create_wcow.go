@@ -9,14 +9,15 @@ import (
 	"github.com/Microsoft/go-winio"
 	"github.com/Microsoft/go-winio/pkg/guid"
 	"github.com/Microsoft/hcsshim/internal/gcs"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/logfields"
 	"github.com/Microsoft/hcsshim/internal/ncproxyttrpc"
 	"github.com/Microsoft/hcsshim/internal/oc"
 	"github.com/Microsoft/hcsshim/internal/processorinfo"
-	"github.com/Microsoft/hcsshim/internal/schemaversion"
 	"github.com/Microsoft/hcsshim/internal/uvmfolder"
+	"github.com/Microsoft/hcsshim/internal/vm"
+	"github.com/Microsoft/hcsshim/internal/vm/hcs"
+	"github.com/Microsoft/hcsshim/internal/vm/remotevm"
 	"github.com/Microsoft/hcsshim/internal/wclayer"
 	"github.com/Microsoft/hcsshim/internal/wcow"
 	"github.com/Microsoft/hcsshim/osversion"
@@ -65,12 +66,14 @@ func NewDefaultOptionsWCOW(id, owner string) *OptionsWCOW {
 }
 
 func (uvm *UtilityVM) startExternalGcsListener(ctx context.Context) error {
-	log.G(ctx).WithField("vmID", uvm.runtimeID).Debug("Using external GCS bridge")
+	log.G(ctx).WithField("vmID", uvm.vm.VmID()).Debug("Using external GCS bridge")
 
-	l, err := winio.ListenHvsock(&winio.HvsockAddr{
-		VMID:      uvm.runtimeID,
-		ServiceID: gcs.WindowsGcsHvsockServiceID,
-	})
+	vmsocket, ok := uvm.vm.(vm.VMSocketManager)
+	if !ok {
+		return errors.Wrap(vm.ErrNotSupported, "stopping vm socket operation")
+	}
+
+	l, err := vmsocket.VMSocketListen(ctx, vm.HvSocket, gcs.WindowsGcsHvsockServiceID)
 	if err != nil {
 		return err
 	}
@@ -78,10 +81,10 @@ func (uvm *UtilityVM) startExternalGcsListener(ctx context.Context) error {
 	return nil
 }
 
-func prepareConfigDoc(ctx context.Context, uvm *UtilityVM, opts *OptionsWCOW, uvmFolder string) (*hcsschema.ComputeSystem, error) {
+func prepareConfigDoc(ctx context.Context, uvm *UtilityVM, opts *OptionsWCOW, uvmFolder string) error {
 	processorTopology, err := processorinfo.HostProcessorInfo(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get host processor information: %s", err)
+		return errors.Wrap(err, "failed to get host processor information")
 	}
 
 	// To maintain compatability with Docker we need to automatically downgrade
@@ -91,109 +94,99 @@ func prepareConfigDoc(ctx context.Context, uvm *UtilityVM, opts *OptionsWCOW, uv
 	// Align the requested memory size.
 	memorySizeInMB := uvm.normalizeMemorySize(ctx, opts.MemorySizeInMB)
 
+	mem, ok := uvm.builder.(vm.MemoryManager)
+	if !ok {
+		return errors.Wrap(vm.ErrNotSupported, "stopping memory setup")
+	}
+
+	if err := mem.SetMemoryLimit(ctx, memorySizeInMB); err != nil {
+		return errors.Wrap(err, "failed to set memory limit")
+	}
+
+	backingType := vm.MemoryBackingTypeVirtual
+	if !opts.AllowOvercommit {
+		backingType = vm.MemoryBackingTypePhysical
+	}
+
+	if err := mem.SetMemoryConfig(&vm.MemoryConfig{
+		BackingType:    backingType,
+		DeferredCommit: opts.EnableDeferredCommit,
+		HotHint:        opts.AllowOvercommit,
+	}); err != nil {
+		return errors.Wrap(err, "failed to set memory config")
+	}
+
+	vsmb, ok := uvm.builder.(vm.VSMBManager)
+	if !ok {
+		return errors.Wrap(vm.ErrNotSupported, "stopping VSMB operation")
+	}
 	// UVM rootfs share is readonly.
 	vsmbOpts := uvm.DefaultVSMBOptions(true)
 	vsmbOpts.TakeBackupPrivilege = true
-	virtualSMB := &hcsschema.VirtualSmb{
-		DirectFileMappingInMB: 1024, // Sensible default, but could be a tuning parameter somewhere
-		Shares: []hcsschema.VirtualSmbShare{
-			{
-				Name:    "os",
-				Path:    filepath.Join(uvmFolder, `UtilityVM\Files`),
-				Options: vsmbOpts,
-			},
-		},
+	if opts.IsTemplate {
+		uvm.SetSaveableVSMBOptions(vsmbOpts, vsmbOpts.ReadOnly)
 	}
 
-	// Here for a temporary workaround until the need for setting this regkey is no more. To protect
-	// against any undesired behavior (such as some general networking scenarios ceasing to function)
-	// with a recent change to fix SMB share access in the UVM, this registry key will be checked to
-	// enable the change in question inside GNS.dll.
-	var registryChanges hcsschema.RegistryChanges
-	if !opts.DisableCompartmentNamespace {
-		registryChanges = hcsschema.RegistryChanges{
-			AddValues: []hcsschema.RegistryValue{
-				{
-					Key: &hcsschema.RegistryKey{
-						Hive: "System",
-						Name: "CurrentControlSet\\Services\\gns",
-					},
-					Name:       "EnableCompartmentNamespace",
-					DWordValue: 1,
-					Type_:      "DWord",
-				},
-			},
-		}
+	if err := vsmb.AddVSMB(
+		ctx,
+		filepath.Join(uvmFolder, `UtilityVM\Files`),
+		"os",
+		nil,
+		vsmbOpts,
+	); err != nil {
+		return errors.Wrap(err, "failed to set VSMB share on UVM document")
 	}
 
-	processor := &hcsschema.Processor2{
-		Count:  uvm.processorCount,
-		Limit:  opts.ProcessorLimit,
-		Weight: opts.ProcessorWeight,
+	cpu, ok := uvm.builder.(vm.ProcessorManager)
+	if !ok {
+		return errors.Wrap(vm.ErrNotSupported, "stopping cpu operation")
 	}
+
+	limits := &vm.ProcessorLimits{
+		Limit:  uint64(opts.ProcessorLimit),
+		Weight: uint64(opts.ProcessorWeight),
+	}
+	if err := cpu.SetProcessorLimits(ctx, limits); err != nil {
+		return errors.Wrap(err, "failed to set processor limit on UVM document")
+	}
+	if err := cpu.SetProcessorCount(uint32(uvm.processorCount)); err != nil {
+		return errors.Wrap(err, "failed to set processor count on UVM document")
+	}
+
 	// We can set a cpu group for the VM at creation time in recent builds.
 	if opts.CPUGroupID != "" {
 		if osversion.Build() < cpuGroupCreateBuild {
-			return nil, errCPUGroupCreateNotSupported
+			return errCPUGroupCreateNotSupported
 		}
-		processor.CpuGroup = &hcsschema.CpuGroup{Id: opts.CPUGroupID}
+		windows, ok := uvm.builder.(vm.WindowsConfigManager)
+		if !ok {
+			return errors.Wrap(vm.ErrNotSupported, "stopping cpu groups operation")
+		}
+		if err := windows.SetCPUGroup(ctx, opts.CPUGroupID); err != nil {
+			return err
+		}
 	}
 
-	doc := &hcsschema.ComputeSystem{
-		Owner:                             uvm.owner,
-		SchemaVersion:                     schemaversion.SchemaV21(),
-		ShouldTerminateOnLastHandleClosed: true,
-		VirtualMachine: &hcsschema.VirtualMachine{
-			StopOnReset: true,
-			Chipset: &hcsschema.Chipset{
-				Uefi: &hcsschema.Uefi{
-					BootThis: &hcsschema.UefiBootEntry{
-						DevicePath: `\EFI\Microsoft\Boot\bootmgfw.efi`,
-						DeviceType: "VmbFs",
-					},
-				},
-			},
-			RegistryChanges: &registryChanges,
-			ComputeTopology: &hcsschema.Topology{
-				Memory: &hcsschema.Memory2{
-					SizeInMB:        memorySizeInMB,
-					AllowOvercommit: opts.AllowOvercommit,
-					// EnableHotHint is not compatible with physical.
-					EnableHotHint:        opts.AllowOvercommit,
-					EnableDeferredCommit: opts.EnableDeferredCommit,
-					LowMMIOGapInMB:       opts.LowMMIOGapInMB,
-					HighMMIOBaseInMB:     opts.HighMMIOBaseInMB,
-					HighMMIOGapInMB:      opts.HighMMIOGapInMB,
-				},
-				Processor: processor,
-			},
-			Devices: &hcsschema.Devices{
-				HvSocket: &hcsschema.HvSocket2{
-					HvSocketConfig: &hcsschema.HvSocketSystemConfig{
-						// Allow administrators and SYSTEM to bind to vsock sockets
-						// so that we can create a GCS log socket.
-						DefaultBindSecurityDescriptor: "D:P(A;;FA;;;SY)(A;;FA;;;BA)",
-					},
-				},
-				VirtualSmb: virtualSMB,
-			},
-		},
+	storage, ok := uvm.builder.(vm.StorageQosManager)
+	if !ok {
+		return errors.Wrap(vm.ErrNotSupported, "stopping storage qos operation")
 	}
 
 	// Handle StorageQoS if set
 	if opts.StorageQoSBandwidthMaximum > 0 || opts.StorageQoSIopsMaximum > 0 {
-		doc.VirtualMachine.StorageQoS = &hcsschema.StorageQoS{
-			IopsMaximum:      opts.StorageQoSIopsMaximum,
-			BandwidthMaximum: opts.StorageQoSBandwidthMaximum,
+		if err := storage.SetStorageQos(
+			int64(opts.StorageQoSIopsMaximum),
+			int64(opts.StorageQoSBandwidthMaximum),
+		); err != nil {
+			return err
 		}
 	}
 
-	return doc, nil
+	return nil
 }
 
-// CreateWCOW creates an HCS compute system representing a utility VM.
-// The HCS Compute system can either be created from scratch or can be cloned from a
-// template.
+// CreateWCOW creates a Windows utility VM.
+// The UVM can either be created from scratch or can be cloned from a template.
 //
 // WCOW Notes:
 //   - The scratch is always attached to SCSI 0:0
@@ -234,6 +227,28 @@ func CreateWCOW(ctx context.Context, opts *OptionsWCOW) (_ *UtilityVM, err error
 		}
 	}()
 
+	var (
+		uvmb  vm.UVMBuilder
+		cOpts []vm.CreateOpt
+	)
+	switch opts.VMSource {
+	case vm.HCS:
+		uvmb, err = hcs.NewUVMBuilder(uvm.id, uvm.owner, vm.Windows)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create UVM builder")
+		}
+		cOpts = applyHcsOpts(opts)
+	case vm.RemoteVM:
+		uvmb, err = remotevm.NewUVMBuilder(ctx, uvm.id, uvm.owner, opts.VMServicePath, opts.VMServiceAddress, vm.Windows)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create UVM builder")
+		}
+		cOpts = applyRemoteVMOpts(opts.Options)
+	default:
+		return nil, fmt.Errorf("unknown VM source: %s", opts.VMSource)
+	}
+	uvm.builder = uvmb
+
 	if err := verifyOptions(ctx, opts); err != nil {
 		return nil, errors.Wrap(err, errBadUVMOpts.Error())
 	}
@@ -258,9 +273,8 @@ func CreateWCOW(ctx context.Context, opts *OptionsWCOW) (_ *UtilityVM, err error
 		}
 	}
 
-	doc, err := prepareConfigDoc(ctx, uvm, opts, uvmFolder)
-	if err != nil {
-		return nil, fmt.Errorf("error in preparing config doc: %s", err)
+	if err := prepareConfigDoc(ctx, uvm, opts, uvmFolder); err != nil {
+		return nil, errors.Wrap(err, "error in preparing config doc")
 	}
 
 	if !opts.IsClone {
@@ -277,30 +291,27 @@ func CreateWCOW(ctx context.Context, opts *OptionsWCOW) (_ *UtilityVM, err error
 			}
 		}
 
-		doc.VirtualMachine.Devices.Scsi = map[string]hcsschema.Scsi{
-			"0": {
-				Attachments: map[string]hcsschema.Attachment{
-					"0": {
-						Path:  scratchPath,
-						Type_: "VirtualDisk",
-					},
-				},
-			},
+		scsi, ok := uvm.builder.(vm.SCSIManager)
+		if !ok {
+			return nil, errors.Wrap(vm.ErrNotSupported, "stopping scsi operation")
+		}
+		if err := scsi.AddSCSIController(0); err != nil {
+			return nil, err
+		}
+		if err := scsi.AddSCSIDisk(ctx, 0, 0, scratchPath, vm.SCSIDiskTypeVHDX, false); err != nil {
+			return nil, err
 		}
 
-		uvm.scsiLocations[0][0] = newSCSIMount(uvm, doc.VirtualMachine.Devices.Scsi["0"].Attachments["0"].Path, "", "", 1, 0, 0, false)
+		uvm.scsiLocations[0][0] = newSCSIMount(uvm, scratchPath, "", "", 1, 0, 0, false)
 	} else {
-		doc.VirtualMachine.RestoreState = &hcsschema.RestoreState{}
-		doc.VirtualMachine.RestoreState.TemplateSystemId = opts.TemplateConfig.UVMID
-
 		for _, cloneableResource := range opts.TemplateConfig.Resources {
 			err = cloneableResource.Clone(ctx, uvm, &cloneData{
-				doc:           doc,
+				builder:       uvmb,
 				scratchFolder: scratchFolder,
 				uvmID:         opts.ID,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed while cloning: %s", err)
+				return nil, errors.Wrap(err, "failed while cloning resource")
 			}
 		}
 
@@ -314,18 +325,11 @@ func CreateWCOW(ctx context.Context, opts *OptionsWCOW) (_ *UtilityVM, err error
 		uvm.IsClone = true
 		uvm.TemplateID = opts.TemplateConfig.UVMID
 	}
+	uvm.IsTemplate = opts.IsTemplate
 
-	// Add appropriate VSMB share options if this UVM needs to be saved as a template
-	if opts.IsTemplate {
-		for _, share := range doc.VirtualMachine.Devices.VirtualSmb.Shares {
-			uvm.SetSaveableVSMBOptions(share.Options, share.Options.ReadOnly)
-		}
-		uvm.IsTemplate = true
-	}
-
-	err = uvm.create(ctx, doc)
+	uvm.vm, err = uvmb.Create(ctx, cOpts)
 	if err != nil {
-		return nil, fmt.Errorf("error while creating the compute system: %s", err)
+		return nil, errors.Wrap(err, "error while creating the Utility VM: %s")
 	}
 
 	if err = uvm.startExternalGcsListener(ctx); err != nil {

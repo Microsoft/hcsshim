@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/Microsoft/hcsshim/cmd/containerd-shim-runhcs-v1/stats"
+	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 )
 
 var (
@@ -24,8 +25,11 @@ const (
 // Start, and Stop and also several optional nested interfaces that can be used to determine what the virtual machine
 // supports and to configure these resources.
 type UVM interface {
-	// ID will return a string identifier for the Utility VM.
+	// ID will return a string identifier for the Utility VM. This will generally be user supplied.
 	ID() string
+
+	// VmID returns the ID that the virtstack uses to identify the VM (if any).
+	VmID() string
 
 	// Start will power on the Utility VM and put it into a running state. This will boot the guest OS and start all of the
 	// devices configured on the machine.
@@ -33,6 +37,9 @@ type UVM interface {
 
 	// Stop will shutdown the Utility VM and place it into a terminated state.
 	Stop(ctx context.Context) error
+
+	// Close will free up any resources for the Utility VM.
+	Close() error
 
 	// Pause will place the Utility VM into a paused state. The guest OS will be halted and any devices will have be in a
 	// a suspended state. Save can be used to snapshot the current state of the virtual machine, and Resume can be used to
@@ -72,6 +79,7 @@ const (
 	VSMB
 	PCI
 	Plan9
+	Pipe
 	Memory
 	Processor
 	CPUGroup
@@ -134,6 +142,39 @@ type VPMemManager interface {
 	RemoveVPMemDevice(ctx context.Context, id uint32, path string) error
 }
 
+type IovSettings = hcsschema.IovSettings
+type NetworkAdapter = hcsschema.NetworkAdapter
+type InterruptModerationName = hcsschema.InterruptModerationName
+type InterruptModerationValue = hcsschema.InterruptModerationValue
+
+// The valid interrupt moderation modes for I/O virtualization (IOV) offloading.
+const (
+	DefaultName  InterruptModerationName = "Default"
+	AdaptiveName InterruptModerationName = "Adaptive"
+	OffName      InterruptModerationName = "Off"
+	LowName      InterruptModerationName = "Low"
+	MediumName   InterruptModerationName = "Medium"
+	HighName     InterruptModerationName = "High"
+)
+
+const (
+	DefaultValue InterruptModerationValue = iota
+	AdaptiveValue
+	OffValue
+	LowValue    InterruptModerationValue = 100
+	MediumValue InterruptModerationValue = 200
+	HighValue   InterruptModerationValue = 300
+)
+
+var InterruptModerationValueToName = map[InterruptModerationValue]InterruptModerationName{
+	DefaultValue:  DefaultName,
+	AdaptiveValue: AdaptiveName,
+	OffValue:      OffName,
+	LowValue:      LowName,
+	MediumValue:   MediumName,
+	HighValue:     HighName,
+}
+
 // NetworkManager manages adding and removing network adapters for a Utility VM.
 type NetworkManager interface {
 	// AddNIC adds a network adapter to the Utility VM. `nicID` should be a string representation of a
@@ -142,6 +183,8 @@ type NetworkManager interface {
 	// RemoveNIC removes a network adapter from the Utility VM. `nicID` should be a string representation of a
 	// Windows GUID.
 	RemoveNIC(ctx context.Context, nicID string, endpointID string, macAddr string) error
+	// UpdateNIC updates a network adapter attached to the Utility VM.
+	UpdateNIC(ctx context.Context, nicID string, nic *NetworkAdapter) error
 }
 
 // PCIManager manages assiging pci devices to a Utility VM. This is Windows specific at the moment.
@@ -161,12 +204,16 @@ const (
 	VSock
 )
 
+type HvSocketServiceConfig = hcsschema.HvSocketServiceConfig
+
 // VMSocketManager manages configuration for a hypervisor socket transport. This includes sockets such as
 // HvSocket and Vsock.
 type VMSocketManager interface {
 	// VMSocketListen will create the requested vmsocket type and listen on the address specified by `connID`.
 	// For HvSocket the type expected is a GUID, for Vsock it's a port of type uint32.
 	VMSocketListen(ctx context.Context, socketType VMSocketType, connID interface{}) (net.Listener, error)
+	// UpdateVMSocket updates settings on the underlying socket transport.
+	UpdateVMSocket(ctx context.Context, socketType VMSocketType, sid string, serviceConfig *HvSocketServiceConfig) error
 }
 
 // VSMBOptions
@@ -178,7 +225,10 @@ type VSMBOptions struct {
 	ShareRead           bool
 	TakeBackupPrivilege bool
 	NoOplocks           bool
+	SingleFileMapping   bool
+	RestrictFileAccess  bool
 	PseudoDirnotify     bool
+	NoLocks             bool
 }
 
 // VSMBManager manages adding virtual smb shares to a Utility VM.
@@ -195,4 +245,12 @@ type Plan9Manager interface {
 	AddPlan9(ctx context.Context, path, name string, port int32, flags int32, allowed []string) error
 	// RemovePlan9 removes a plan 9 share from a running Utility VM.
 	RemovePlan9(ctx context.Context, name string, port int32) error
+}
+
+// PipeManager manages adding named pipes to a Utility VM.
+type PipeManager interface {
+	// AddPipe adds a named pipe to a running Utility VM
+	AddPipe(ctx context.Context, path string) error
+	// RemovePipe removes a named pipe from a running Utility VM
+	RemovePipe(ctx context.Context, path string) error
 }

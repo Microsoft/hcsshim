@@ -2,15 +2,14 @@ package uvm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/Microsoft/hcsshim/internal/guestrequest"
-	"github.com/Microsoft/hcsshim/internal/hcs/resourcepaths"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/requesttype"
+	"github.com/Microsoft/hcsshim/internal/vm"
 	"github.com/Microsoft/hcsshim/osversion"
+	"github.com/pkg/errors"
 )
 
 // Plan9Share is a struct containing host paths for the UVM
@@ -23,7 +22,7 @@ type Plan9Share struct {
 // Release frees the resources of the corresponding Plan9 share
 func (p9 *Plan9Share) Release(ctx context.Context) error {
 	if err := p9.vm.RemovePlan9(ctx, p9); err != nil {
-		return fmt.Errorf("failed to remove plan9 share: %s", err)
+		return errors.Wrap(err, "failed to remove plan9 share")
 	}
 	return nil
 }
@@ -68,30 +67,27 @@ func (uvm *UtilityVM) AddPlan9(ctx context.Context, hostPath string, uvmPath str
 	uvm.m.Unlock()
 	name := strconv.FormatUint(index, 10)
 
-	modification := &hcsschema.ModifySettingRequest{
-		RequestType: requesttype.Add,
-		Settings: hcsschema.Plan9Share{
-			Name:         name,
-			AccessName:   name,
-			Path:         hostPath,
-			Port:         plan9Port,
-			Flags:        flags,
-			AllowedFiles: allowedNames,
-		},
-		ResourcePath: resourcepaths.Plan9ShareResourcePath,
-		GuestRequest: guestrequest.GuestRequest{
-			ResourceType: guestrequest.ResourceTypeMappedDirectory,
-			RequestType:  requesttype.Add,
-			Settings: guestrequest.LCOWMappedDirectory{
-				MountPath: uvmPath,
-				ShareName: name,
-				Port:      plan9Port,
-				ReadOnly:  readOnly,
-			},
+	plan9, ok := uvm.vm.(vm.Plan9Manager)
+	if !ok || !uvm.vm.Supported(vm.Plan9, vm.Add) {
+		return nil, errors.Wrap(vm.ErrNotSupported, "stopping plan 9 share add")
+	}
+
+	if err := plan9.AddPlan9(ctx, hostPath, name, plan9Port, flags, allowedNames); err != nil {
+		return nil, errors.Wrap(err, "failed to add plan 9 share")
+	}
+
+	guestReq := guestrequest.GuestRequest{
+		ResourceType: guestrequest.ResourceTypeMappedDirectory,
+		RequestType:  requesttype.Add,
+		Settings: guestrequest.LCOWMappedDirectory{
+			MountPath: uvmPath,
+			ShareName: name,
+			Port:      plan9Port,
+			ReadOnly:  readOnly,
 		},
 	}
 
-	if err := uvm.modify(ctx, modification); err != nil {
+	if err := uvm.GuestRequest(ctx, guestReq); err != nil {
 		return nil, err
 	}
 
@@ -109,26 +105,26 @@ func (uvm *UtilityVM) RemovePlan9(ctx context.Context, share *Plan9Share) error 
 		return errNotSupported
 	}
 
-	modification := &hcsschema.ModifySettingRequest{
-		RequestType: requesttype.Remove,
-		Settings: hcsschema.Plan9Share{
-			Name:       share.name,
-			AccessName: share.name,
-			Port:       plan9Port,
-		},
-		ResourcePath: resourcepaths.Plan9ShareResourcePath,
-		GuestRequest: guestrequest.GuestRequest{
-			ResourceType: guestrequest.ResourceTypeMappedDirectory,
-			RequestType:  requesttype.Remove,
-			Settings: guestrequest.LCOWMappedDirectory{
-				MountPath: share.uvmPath,
-				ShareName: share.name,
-				Port:      plan9Port,
-			},
+	plan9, ok := uvm.vm.(vm.Plan9Manager)
+	if !ok || !uvm.vm.Supported(vm.Plan9, vm.Remove) {
+		return errors.Wrap(vm.ErrNotSupported, "stopping plan 9 share removal")
+	}
+
+	guestReq := guestrequest.GuestRequest{
+		ResourceType: guestrequest.ResourceTypeMappedDirectory,
+		RequestType:  requesttype.Remove,
+		Settings: guestrequest.LCOWMappedDirectory{
+			MountPath: share.uvmPath,
+			ShareName: share.name,
+			Port:      plan9Port,
 		},
 	}
-	if err := uvm.modify(ctx, modification); err != nil {
-		return fmt.Errorf("failed to remove plan9 share %s from %s: %+v: %s", share.name, uvm.id, modification, err)
+
+	if err := uvm.GuestRequest(ctx, guestReq); err != nil {
+		return fmt.Errorf("failed to remove plan9 share %s from %s: %+v: %s", share.name, uvm.id, guestReq, err)
+	}
+	if err := plan9.RemovePlan9(ctx, share.name, plan9Port); err != nil {
+		return errors.Wrap(err, "failed to remove plan 9 share")
 	}
 	return nil
 }

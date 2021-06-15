@@ -6,9 +6,9 @@ import (
 
 	"github.com/Microsoft/go-winio/pkg/guid"
 	"github.com/Microsoft/hcsshim/internal/guestrequest"
-	"github.com/Microsoft/hcsshim/internal/hcs/resourcepaths"
-	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/requesttype"
+	"github.com/Microsoft/hcsshim/internal/vm"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -84,38 +84,31 @@ func (uvm *UtilityVM) AssignDevice(ctx context.Context, deviceID string) (*VPCID
 		return existingVPCIDevice, nil
 	}
 
-	targetDevice := hcsschema.VirtualPciDevice{
-		Functions: []hcsschema.VirtualPciFunction{
-			{
-				DeviceInstancePath: deviceID,
-			},
-		},
+	pci, ok := uvm.vm.(vm.PCIManager)
+	if !ok || !uvm.vm.Supported(vm.PCI, vm.Add) {
+		return nil, errors.Wrap(vm.ErrNotSupported, "stopping pci device add")
 	}
-
-	request := &hcsschema.ModifySettingRequest{
-		ResourcePath: fmt.Sprintf(resourcepaths.VirtualPCIResourceFormat, vmBusGUID),
-		RequestType:  requesttype.Add,
-		Settings:     targetDevice,
+	if err := pci.AddDevice(ctx, deviceID, vmBusGUID); err != nil {
+		return nil, errors.Wrap(err, "failed to add vpci device")
 	}
 
 	// WCOW (when supported) does not require a guest request as part of the
 	// device assignment
 	if uvm.operatingSystem != "windows" {
-		// for LCOW, we need to make sure that specific paths relating to the
-		// device exist so they are ready to be used by later
-		// work in openGCS
-		request.GuestRequest = guestrequest.GuestRequest{
+		// For LCOW, we need to make sure that specific paths relating to the
+		// device exist so they are ready to be used by later work in openGCS
+		guestReq := guestrequest.GuestRequest{
 			ResourceType: guestrequest.ResourceTypeVPCIDevice,
 			RequestType:  requesttype.Add,
 			Settings: guestrequest.LCOWMappedVPCIDevice{
 				VMBusGUID: vmBusGUID,
 			},
 		}
+		if err := uvm.GuestRequest(ctx, guestReq); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := uvm.modify(ctx, request); err != nil {
-		return nil, err
-	}
 	result := &VPCIDevice{
 		vm:               uvm,
 		VMBusGUID:        vmBusGUID,
@@ -141,10 +134,14 @@ func (uvm *UtilityVM) removeDevice(ctx context.Context, deviceInstanceID string)
 	vpci.refCount--
 	if vpci.refCount == 0 {
 		delete(uvm.vpciDevices, deviceInstanceID)
-		return uvm.modify(ctx, &hcsschema.ModifySettingRequest{
-			ResourcePath: fmt.Sprintf(resourcepaths.VirtualPCIResourceFormat, vpci.VMBusGUID),
-			RequestType:  requesttype.Remove,
-		})
+
+		pci, ok := uvm.vm.(vm.PCIManager)
+		if !ok || !uvm.vm.Supported(vm.PCI, vm.Add) {
+			return errors.Wrap(vm.ErrNotSupported, "stopping pci device removal")
+		}
+		if err := pci.RemoveDevice(ctx, vpci.deviceInstanceID, vpci.VMBusGUID); err != nil {
+			return errors.Wrap(err, "failed to remove vpci device")
+		}
 	}
 	return nil
 }

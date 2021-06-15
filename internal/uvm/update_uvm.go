@@ -4,12 +4,13 @@ import (
 	"context"
 
 	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
+	"github.com/Microsoft/hcsshim/internal/vm"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func (uvm *UtilityVM) UpdateConstraints(ctx context.Context, data interface{}, annotations map[string]string) error {
 	var memoryLimitInBytes *uint64
-	var processorLimits *hcsschema.ProcessorLimits
+	var processorLimits *vm.ProcessorLimits
 
 	switch resources := data.(type) {
 	case *specs.WindowsResources:
@@ -51,6 +52,5 @@ func (uvm *UtilityVM) UpdateConstraints(ctx context.Context, data interface{}, a
 			return err
 		}
 	}
-
 	return nil
 }
