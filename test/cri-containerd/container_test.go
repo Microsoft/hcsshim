@@ -774,3 +774,54 @@ func Test_RunContainer_ShareScratch_CheckSize_LCOW(t *testing.T) {
 		t.Fatalf("expected available rootfs size to be the same, got: %s and %s", availableSizeContainerOne, availableSizeContainerTwo)
 	}
 }
+
+func Test_CreateContainer_DevShmSize(t *testing.T) {
+	requireFeatures(t, featureLCOW)
+
+	pullRequiredLcowImages(t, []string{imageLcowK8sPause, imageLcowAlpine})
+
+	client := newTestRuntimeClient(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	podReq := getRunPodSandboxRequest(t, lcowRuntimeHandler, nil)
+	podID := runPodSandbox(t, client, ctx, podReq)
+	defer removePodSandbox(t, client, ctx, podID)
+
+	cmd := []string{"ash", "-c", "while true; do sleep 1; done"}
+	contReq1 := getCreateContainerRequest(podID, "test-container-devshm-256", imageLcowAlpine, cmd, podReq.Config)
+	// the /dev/shm size is expected to be in KB, set it to 256 MB
+	size := 256 * 1024
+	contReq1.Config.Annotations = map[string]string{
+		"io.microsoft.container.storage.shm.size-kb": strconv.Itoa(size),
+	}
+	containerID1 := createContainer(t, client, ctx, contReq1)
+	defer removeContainer(t, client, ctx, containerID1)
+
+	startContainer(t, client, ctx, containerID1)
+	defer stopContainer(t, client, ctx, containerID1)
+
+	contReq2 := getCreateContainerRequest(podID, "test-container-devshm-default", imageLcowAlpine, cmd, podReq.Config)
+	containerID2 := createContainer(t, client, ctx, contReq2)
+	defer removeContainer(t, client, ctx, containerID2)
+	startContainer(t, client, ctx, containerID2)
+	defer stopContainer(t, client, ctx, containerID2)
+
+	// check /dev/shm size on container 1, should be set to 256 MB
+	execResponse1 := execSync(t, client, ctx, &runtime.ExecSyncRequest{
+		ContainerId: containerID1,
+		Cmd:         []string{"df", "-h", "/dev/shm"},
+	})
+	if !strings.Contains(string(execResponse1.Stdout), "256.0M") {
+		t.Fatalf("expected the size of /dev/shm to be 256MB. Got output instead: %s", string(execResponse1.Stdout))
+	}
+
+	// check /dev/shm size on container 2, should be set to default 64 MB
+	execResponse2 := execSync(t, client, ctx, &runtime.ExecSyncRequest{
+		ContainerId: containerID2,
+		Cmd:         []string{"df", "-h", "/dev/shm"},
+	})
+	if !strings.Contains(string(execResponse2.Stdout), "64.0M") {
+		t.Fatalf("expected the size of /dev/shm to be 64MB. Got output instead: %s", string(execResponse1.Stdout))
+	}
+}
