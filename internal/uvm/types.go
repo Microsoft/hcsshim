@@ -89,7 +89,7 @@ type UtilityVM struct {
 	scsiLocations       [4][64]*SCSIMount // Hyper-V supports 4 controllers, 64 slots per controller. Limited to 1 controller for now though.
 	scsiControllerCount uint32            // Number of SCSI controllers in the utility VM
 
-	vpciDevices map[string]*VPCIDevice // map of device instance id to vpci device
+	vpciDevices map[VPCIDeviceKey]*VPCIDevice // map of device instance id to vpci device
 
 	// Plan9 are directories mapped into a Linux utility VM
 	plan9Counter uint64 // Each newly-added plan9 share has a counter used as its ID in the ResourceURI and for the name

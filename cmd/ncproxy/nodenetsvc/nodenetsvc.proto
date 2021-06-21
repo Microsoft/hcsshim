@@ -7,35 +7,47 @@ service NodeNetworkService {
     rpc ConfigureContainerNetworking(ConfigureContainerNetworkingRequest) returns (ConfigureContainerNetworkingResponse);
     rpc PingNodeNetworkService(PingNodeNetworkServiceRequest) returns (PingNodeNetworkServiceResponse);
 }
- 
-enum RequestType { 
-    Setup = 0; 
-    Teardown = 1; 
-}
- 
+
 message ConfigureNetworkingRequest {
     string container_id = 1;
     RequestType request_type = 2; // Setup for AddNIC and Teardown for DeleteNIC
 }
 
-message ConfigureNetworkingResponse{}
+message ConfigureNetworkingResponse {}
 
 message PingNodeNetworkServiceRequest {
-    string pingRequestMessage = 1;
+    string ping_request_message = 1;
 }
 
 message PingNodeNetworkServiceResponse {
-    string pingResponseMessage = 1;
+    string ping_response_message = 1;
 }
 
-message ConfigureContainerNetworkingRequest{
+enum RequestType { 
+    Setup = 0;
+    Teardown = 1;
+}
+
+message ConfigureContainerNetworkingRequest {    
     RequestType request_type = 1;
     string container_id = 2;
-    string network_namespace = 3;
+    string network_namespace_id = 3;
 }
 
-message ConfigureContainerNetworkingResponse { 
-    bool success = 1; 
-    string response_json = 2; 
-    string error_json= 3; 
-}  
+message ConfigureContainerNetworkingResponse {     
+    repeated ContainerNetworkInterface interfaces = 1;
+}
+
+message ContainerIPAddress {
+    string version = 1;        
+    string ip = 3;    
+    string prefix_length = 4;
+    string default_gateway = 5;
+}
+
+message ContainerNetworkInterface {
+    string name = 1;
+    string mac_address = 2;
+    string network_namespace_id = 3;    
+    repeated ContainerIPAddress ipaddresses = 4;
+}

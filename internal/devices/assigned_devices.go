@@ -42,7 +42,7 @@ func AddDevice(ctx context.Context, vm *uvm.UtilityVM, idType, deviceID, deviceU
 		}
 	}()
 	if idType == uvm.VPCIDeviceIDType || idType == uvm.VPCIDeviceIDTypeLegacy {
-		vpci, err = vm.AssignDevice(ctx, deviceID)
+		vpci, err = vm.AssignDevice(ctx, deviceID, 0)
 		if err != nil {
 			return vpci, nil, errors.Wrapf(err, "failed to assign device %s of type %s to pod %s", deviceID, idType, vm.ID())
 		}
