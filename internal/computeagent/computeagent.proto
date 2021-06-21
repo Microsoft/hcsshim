@@ -8,7 +8,45 @@ service ComputeAgent{
     rpc AddNIC(AddNICInternalRequest) returns (AddNICInternalResponse) {}
     rpc ModifyNIC(ModifyNICInternalRequest) returns (ModifyNICInternalResponse) {}
     rpc DeleteNIC(DeleteNICInternalRequest) returns (DeleteNICInternalResponse) {}
+    rpc AssignVF(AssignVFInternalRequest) returns (AssignVFInternalResponse) {}
+    rpc RemoveVF(RemoveVFInternalRequest) returns (RemoveVFInternalResponse) {}
+    rpc AddNICWithVF(AddNICWithVFInternalRequest) returns (AddNICWithVFInternalResponse) {}
+    rpc DeleteNICWithVF(DeleteNICWithVFInternalRequest) returns (DeleteNICWithVFInternalResponse) {}
 }
+
+message DeleteNICWithVFInternalRequest   {
+    string container_id = 1;
+    string nic_id = 2;
+}
+message DeleteNICWithVFInternalResponse {}
+
+message AddNICWithVFInternalRequest   {
+    string namespace_id = 1;
+    string container_id = 2;
+    string nic_id = 3;
+    string ipaddress = 4;
+    uint32 ipaddress_prefixlength = 5;
+    string default_gateway   = 6;
+}
+message AddNICWithVFInternalResponse {}
+
+message AssignVFInternalRequest {
+    string container_id = 1;
+    string device_id = 2;
+    uint32 virtual_function_index = 3;
+}
+
+message AssignVFInternalResponse {
+    string id = 1;
+}
+
+message RemoveVFInternalRequest {
+    string container_id = 1;
+    string device_id = 2;
+    uint32 virtual_function_index = 3;
+}
+
+message RemoveVFInternalResponse {}
 
 message AddNICInternalRequest {
     string container_id = 1;

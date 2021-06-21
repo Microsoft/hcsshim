@@ -129,7 +129,7 @@ func (m *ConfigureNetworkingResponse) XXX_DiscardUnknown() {
 var xxx_messageInfo_ConfigureNetworkingResponse proto.InternalMessageInfo
 
 type PingNodeNetworkServiceRequest struct {
-	PingRequestMessage   string   `protobuf:"bytes,1,opt,name=pingRequestMessage,proto3" json:"pingRequestMessage,omitempty"`
+	PingRequestMessage   string   `protobuf:"bytes,1,opt,name=ping_request_message,json=pingRequestMessage,proto3" json:"ping_request_message,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -168,7 +168,7 @@ func (m *PingNodeNetworkServiceRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_PingNodeNetworkServiceRequest proto.InternalMessageInfo
 
 type PingNodeNetworkServiceResponse struct {
-	PingResponseMessage  string   `protobuf:"bytes,1,opt,name=pingResponseMessage,proto3" json:"pingResponseMessage,omitempty"`
+	PingResponseMessage  string   `protobuf:"bytes,1,opt,name=ping_response_message,json=pingResponseMessage,proto3" json:"ping_response_message,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -209,7 +209,7 @@ var xxx_messageInfo_PingNodeNetworkServiceResponse proto.InternalMessageInfo
 type ConfigureContainerNetworkingRequest struct {
 	RequestType          RequestType `protobuf:"varint,1,opt,name=request_type,json=requestType,proto3,enum=azure.nodenetworkservice.RequestType" json:"request_type,omitempty"`
 	ContainerID          string      `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	NetworkNamespace     string      `protobuf:"bytes,3,opt,name=network_namespace,json=networkNamespace,proto3" json:"network_namespace,omitempty"`
+	NetworkNamespaceID   string      `protobuf:"bytes,3,opt,name=network_namespace_id,json=networkNamespaceId,proto3" json:"network_namespace_id,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}    `json:"-"`
 	XXX_unrecognized     []byte      `json:"-"`
 	XXX_sizecache        int32       `json:"-"`
@@ -248,12 +248,10 @@ func (m *ConfigureContainerNetworkingRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_ConfigureContainerNetworkingRequest proto.InternalMessageInfo
 
 type ConfigureContainerNetworkingResponse struct {
-	Success              bool     `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	ResponseJson         string   `protobuf:"bytes,2,opt,name=response_json,json=responseJson,proto3" json:"response_json,omitempty"`
-	ErrorJson            string   `protobuf:"bytes,3,opt,name=error_json,json=errorJson,proto3" json:"error_json,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
+	Interfaces           []*ContainerNetworkInterface `protobuf:"bytes,1,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}                     `json:"-"`
+	XXX_unrecognized     []byte                       `json:"-"`
+	XXX_sizecache        int32                        `json:"-"`
 }
 
 func (m *ConfigureContainerNetworkingResponse) Reset()      { *m = ConfigureContainerNetworkingResponse{} }
@@ -288,6 +286,90 @@ func (m *ConfigureContainerNetworkingResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_ConfigureContainerNetworkingResponse proto.InternalMessageInfo
 
+type ContainerIPAddress struct {
+	Version              string   `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Ip                   string   `protobuf:"bytes,3,opt,name=ip,proto3" json:"ip,omitempty"`
+	PrefixLength         string   `protobuf:"bytes,4,opt,name=prefix_length,json=prefixLength,proto3" json:"prefix_length,omitempty"`
+	DefaultGateway       string   `protobuf:"bytes,5,opt,name=default_gateway,json=defaultGateway,proto3" json:"default_gateway,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *ContainerIPAddress) Reset()      { *m = ContainerIPAddress{} }
+func (*ContainerIPAddress) ProtoMessage() {}
+func (*ContainerIPAddress) Descriptor() ([]byte, []int) {
+	return fileDescriptor_3a65404bd96160d4, []int{6}
+}
+func (m *ContainerIPAddress) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ContainerIPAddress) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ContainerIPAddress.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ContainerIPAddress) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ContainerIPAddress.Merge(m, src)
+}
+func (m *ContainerIPAddress) XXX_Size() int {
+	return m.Size()
+}
+func (m *ContainerIPAddress) XXX_DiscardUnknown() {
+	xxx_messageInfo_ContainerIPAddress.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ContainerIPAddress proto.InternalMessageInfo
+
+type ContainerNetworkInterface struct {
+	Name                 string                `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	MacAddress           string                `protobuf:"bytes,2,opt,name=mac_address,json=macAddress,proto3" json:"mac_address,omitempty"`
+	NetworkNamespaceID   string                `protobuf:"bytes,3,opt,name=network_namespace_id,json=networkNamespaceId,proto3" json:"network_namespace_id,omitempty"`
+	Ipaddresses          []*ContainerIPAddress `protobuf:"bytes,4,rep,name=ipaddresses,proto3" json:"ipaddresses,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}              `json:"-"`
+	XXX_unrecognized     []byte                `json:"-"`
+	XXX_sizecache        int32                 `json:"-"`
+}
+
+func (m *ContainerNetworkInterface) Reset()      { *m = ContainerNetworkInterface{} }
+func (*ContainerNetworkInterface) ProtoMessage() {}
+func (*ContainerNetworkInterface) Descriptor() ([]byte, []int) {
+	return fileDescriptor_3a65404bd96160d4, []int{7}
+}
+func (m *ContainerNetworkInterface) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ContainerNetworkInterface) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ContainerNetworkInterface.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalTo(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ContainerNetworkInterface) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ContainerNetworkInterface.Merge(m, src)
+}
+func (m *ContainerNetworkInterface) XXX_Size() int {
+	return m.Size()
+}
+func (m *ContainerNetworkInterface) XXX_DiscardUnknown() {
+	xxx_messageInfo_ContainerNetworkInterface.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ContainerNetworkInterface proto.InternalMessageInfo
+
 func init() {
 	proto.RegisterEnum("azure.nodenetworkservice.RequestType", RequestType_name, RequestType_value)
 	proto.RegisterType((*ConfigureNetworkingRequest)(nil), "azure.nodenetworkservice.ConfigureNetworkingRequest")
@@ -296,6 +378,8 @@ func init() {
 	proto.RegisterType((*PingNodeNetworkServiceResponse)(nil), "azure.nodenetworkservice.PingNodeNetworkServiceResponse")
 	proto.RegisterType((*ConfigureContainerNetworkingRequest)(nil), "azure.nodenetworkservice.ConfigureContainerNetworkingRequest")
 	proto.RegisterType((*ConfigureContainerNetworkingResponse)(nil), "azure.nodenetworkservice.ConfigureContainerNetworkingResponse")
+	proto.RegisterType((*ContainerIPAddress)(nil), "azure.nodenetworkservice.ContainerIPAddress")
+	proto.RegisterType((*ContainerNetworkInterface)(nil), "azure.nodenetworkservice.ContainerNetworkInterface")
 }
 
 func init() {
@@ -303,40 +387,48 @@ func init() {
 }
 
 var fileDescriptor_3a65404bd96160d4 = []byte{
-	// 513 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x54, 0x41, 0x6f, 0xd3, 0x30,
-	0x14, 0xae, 0x37, 0x01, 0xeb, 0x6b, 0x81, 0xe2, 0x49, 0x28, 0x2a, 0x34, 0x4c, 0xd9, 0x40, 0x13,
-	0x48, 0x09, 0x2a, 0x20, 0xb8, 0xc0, 0x61, 0xdb, 0x81, 0x21, 0xad, 0xa0, 0x6c, 0x27, 0x2e, 0x55,
-	0xe6, 0xbc, 0xa5, 0x01, 0xd5, 0x0e, 0x76, 0xb2, 0x51, 0x4e, 0x08, 0x71, 0xe3, 0x1f, 0x20, 0xf1,
-	0x7b, 0xd8, 0x71, 0x47, 0x4e, 0x88, 0xe5, 0x97, 0x20, 0xea, 0xa4, 0x2d, 0x6b, 0x52, 0x6d, 0xbd,
-	0x25, 0xef, 0xf3, 0xfb, 0xfc, 0x7d, 0x9f, 0xfd, 0x0c, 0x5b, 0x41, 0x18, 0xf7, 0x92, 0x7d, 0x9b,
-	0x89, 0xbe, 0xb3, 0x13, 0x32, 0x29, 0x94, 0x38, 0x88, 0x9d, 0x1e, 0x53, 0xaa, 0x17, 0xf6, 0x1d,
-	0xd6, 0xf7, 0x1d, 0xce, 0x22, 0x29, 0x3e, 0x0e, 0x1c, 0x2e, 0x7c, 0xe4, 0x18, 0xab, 0x43, 0x36,
-	0xf1, 0x69, 0x47, 0x52, 0xc4, 0x82, 0x1a, 0xde, 0xa7, 0x44, 0xa2, 0x9d, 0xd5, 0x8f, 0x84, 0x7c,
-	0xaf, 0x50, 0x1e, 0x86, 0x0c, 0xad, 0xef, 0x04, 0x9a, 0x9b, 0x82, 0x1f, 0x84, 0x41, 0x22, 0xb1,
-	0xa3, 0xb1, 0x90, 0x07, 0x2e, 0x7e, 0x48, 0x50, 0xc5, 0xb4, 0x0d, 0x75, 0x26, 0x78, 0xec, 0x85,
-	0x1c, 0x65, 0x37, 0xf4, 0x0d, 0xb2, 0x42, 0xd6, 0xab, 0x1b, 0xd7, 0xd3, 0xdf, 0x77, 0x6a, 0x9b,
-	0x79, 0x7d, 0x7b, 0xcb, 0xad, 0x8d, 0x16, 0x6d, 0xfb, 0xf4, 0x25, 0xd4, 0xa5, 0x6e, 0xef, 0xc6,
-	0x83, 0x08, 0x8d, 0x85, 0x15, 0xb2, 0x7e, 0xad, 0x7d, 0xd7, 0x2e, 0xd3, 0x60, 0x67, 0x9b, 0xed,
-	0x0d, 0x22, 0x74, 0x6b, 0x72, 0xfc, 0x63, 0xb5, 0xe0, 0x56, 0xa1, 0x36, 0x15, 0x09, 0xae, 0xd0,
-	0x7a, 0x0d, 0xad, 0x37, 0x21, 0x0f, 0x3a, 0xc2, 0xcf, 0xd1, 0x5d, 0xcd, 0x98, 0xab, 0xb7, 0x81,
-	0x46, 0x63, 0x33, 0x3b, 0xa8, 0x94, 0x17, 0xa0, 0xf6, 0xe0, 0x16, 0x20, 0x96, 0x0b, 0x66, 0x19,
-	0xa1, 0xde, 0x92, 0x3e, 0x84, 0xe5, 0x68, 0x42, 0xc2, 0xff, 0x94, 0x45, 0x90, 0x75, 0x42, 0x60,
-	0x75, 0x64, 0x62, 0x94, 0xd9, 0x74, 0xd2, 0x67, 0x53, 0x23, 0xf3, 0xa6, 0x36, 0x75, 0x66, 0x0b,
-	0xe7, 0x38, 0xb3, 0x07, 0x70, 0x23, 0xa3, 0xef, 0x72, 0xaf, 0x8f, 0x2a, 0xf2, 0x18, 0x1a, 0x8b,
-	0x43, 0x57, 0x8d, 0x0c, 0xe8, 0xe4, 0x75, 0xeb, 0x2b, 0x81, 0xb5, 0xd9, 0x96, 0xb2, 0xb4, 0x0c,
-	0xb8, 0xa2, 0x12, 0xc6, 0x50, 0xa9, 0xa1, 0x9d, 0x25, 0x37, 0xff, 0xa5, 0xab, 0x70, 0x55, 0x66,
-	0xab, 0xba, 0xef, 0x94, 0xe0, 0x5a, 0xa4, 0x5b, 0xcf, 0x8b, 0xaf, 0x94, 0xe0, 0xb4, 0x05, 0x80,
-	0x52, 0x0a, 0xa9, 0x57, 0x68, 0x35, 0xd5, 0x61, 0xe5, 0x1f, 0x7c, 0xff, 0x1e, 0xd4, 0x26, 0x32,
-	0xa0, 0x55, 0xb8, 0xb4, 0x8b, 0x71, 0x12, 0x35, 0x2a, 0xb4, 0x0e, 0x4b, 0x7b, 0xe8, 0x49, 0x5f,
-	0x1c, 0xf1, 0x06, 0x69, 0xff, 0x5c, 0x04, 0x3a, 0x7d, 0xa4, 0xf4, 0x0b, 0x81, 0xe5, 0x82, 0xdb,
-	0x45, 0x1f, 0x97, 0x47, 0x5e, 0x3e, 0x28, 0xcd, 0x27, 0x17, 0xec, 0xca, 0x12, 0xfa, 0x41, 0xe0,
-	0xf6, 0xac, 0x28, 0xe9, 0xf3, 0x73, 0xf0, 0x96, 0xdf, 0xaa, 0xe6, 0x8b, 0x79, 0xdb, 0x33, 0x7d,
-	0xdf, 0x08, 0xdc, 0x2c, 0x1e, 0x09, 0xfa, 0xb4, 0x9c, 0x7a, 0xe6, 0x54, 0x36, 0x9f, 0x5d, 0xbc,
-	0x51, 0xab, 0xd9, 0x58, 0x3b, 0x3e, 0x35, 0x2b, 0xbf, 0x4e, 0xcd, 0xca, 0xe7, 0xd4, 0x24, 0xc7,
-	0xa9, 0x49, 0x4e, 0x52, 0x93, 0xfc, 0x49, 0x4d, 0xf2, 0x16, 0xc6, 0x4f, 0xde, 0xfe, 0xe5, 0xe1,
-	0x9b, 0xf7, 0xe8, 0x6f, 0x00, 0x00, 0x00, 0xff, 0xff, 0x25, 0xe7, 0xf5, 0xc4, 0x3b, 0x05, 0x00,
-	0x00,
+	// 656 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x55, 0x5d, 0x4f, 0x13, 0x4d,
+	0x14, 0x66, 0x0a, 0xbc, 0xef, 0xcb, 0x69, 0x5f, 0x20, 0x03, 0x92, 0xb5, 0x4a, 0x21, 0x0b, 0x2a,
+	0x31, 0xa6, 0x35, 0x45, 0xa3, 0x37, 0x9a, 0x08, 0x24, 0xda, 0x44, 0x1a, 0x5c, 0xb8, 0xf2, 0x66,
+	0xb3, 0xec, 0x9e, 0x6e, 0x27, 0xb2, 0x33, 0xe3, 0xcc, 0x16, 0xa8, 0xde, 0x18, 0x6f, 0xf5, 0x17,
+	0x98, 0xf8, 0x7b, 0xe4, 0xd2, 0x4b, 0xaf, 0x88, 0xf4, 0xd2, 0xc4, 0xff, 0x60, 0xd8, 0x8f, 0xb6,
+	0x29, 0x6c, 0x03, 0xc4, 0xbb, 0x99, 0xe7, 0xcc, 0x79, 0xe6, 0x79, 0xce, 0x99, 0x0f, 0xd8, 0xf0,
+	0x59, 0xd8, 0x6c, 0xed, 0x96, 0x5d, 0x11, 0x54, 0x36, 0x99, 0xab, 0x84, 0x16, 0x8d, 0xb0, 0xd2,
+	0x74, 0xb5, 0x6e, 0xb2, 0xa0, 0xe2, 0x06, 0x5e, 0x85, 0xbb, 0x52, 0x89, 0xc3, 0x76, 0x85, 0x0b,
+	0x0f, 0x39, 0x86, 0x7a, 0xdf, 0xed, 0x1b, 0x96, 0xa5, 0x12, 0xa1, 0xa0, 0x86, 0xf3, 0xae, 0xa5,
+	0xb0, 0x9c, 0xe0, 0x07, 0x42, 0xbd, 0xd1, 0xa8, 0xf6, 0x99, 0x8b, 0xe6, 0x17, 0x02, 0xc5, 0x75,
+	0xc1, 0x1b, 0xcc, 0x6f, 0x29, 0xac, 0xc7, 0x31, 0xc6, 0x7d, 0x0b, 0xdf, 0xb6, 0x50, 0x87, 0xb4,
+	0x0a, 0x05, 0x57, 0xf0, 0xd0, 0x61, 0x1c, 0x95, 0xcd, 0x3c, 0x83, 0x2c, 0x92, 0x95, 0x89, 0xb5,
+	0xa9, 0xce, 0xf1, 0x42, 0x7e, 0x3d, 0xc5, 0x6b, 0x1b, 0x56, 0xbe, 0xbb, 0xa8, 0xe6, 0xd1, 0x17,
+	0x50, 0x50, 0x71, 0xba, 0x1d, 0xb6, 0x25, 0x1a, 0xb9, 0x45, 0xb2, 0x32, 0x59, 0xbd, 0x55, 0xce,
+	0xd2, 0x50, 0x4e, 0x36, 0xdb, 0x69, 0x4b, 0xb4, 0xf2, 0xaa, 0x37, 0x31, 0xe7, 0xe1, 0xc6, 0xb9,
+	0xda, 0xb4, 0x14, 0x5c, 0xa3, 0xf9, 0x0a, 0xe6, 0xb7, 0x18, 0xf7, 0xeb, 0xc2, 0x4b, 0xa3, 0xdb,
+	0x31, 0x63, 0xaa, 0xfe, 0x3e, 0xcc, 0x4a, 0xc6, 0x7d, 0x3b, 0x95, 0x13, 0xa0, 0xd6, 0x8e, 0x8f,
+	0xb1, 0x0b, 0x8b, 0xca, 0x9e, 0xd1, 0xcd, 0x38, 0x62, 0xee, 0x40, 0x29, 0x8b, 0x32, 0xde, 0x94,
+	0x56, 0xe1, 0x5a, 0xc2, 0x19, 0x03, 0x03, 0xa4, 0x33, 0xb2, 0x4f, 0x61, 0xca, 0xfa, 0x9b, 0xc0,
+	0x52, 0xd7, 0x48, 0xb7, 0x6e, 0x67, 0xab, 0x3d, 0x58, 0x39, 0x72, 0xd5, 0xca, 0x9d, 0xe9, 0x5b,
+	0xee, 0x42, 0x7d, 0x9b, 0x4d, 0xe8, 0x6d, 0xee, 0x04, 0xa8, 0xa5, 0xe3, 0xe2, 0x69, 0xee, 0x68,
+	0x94, 0x3b, 0xd7, 0x39, 0x5e, 0xa0, 0x89, 0xe4, 0x7a, 0x1a, 0xae, 0x6d, 0x58, 0x94, 0x0f, 0x62,
+	0x9e, 0xf9, 0x1e, 0x96, 0x87, 0xdb, 0x4d, 0x6a, 0xb9, 0x0d, 0xc0, 0x78, 0x88, 0xaa, 0xe1, 0xb8,
+	0xa8, 0x0d, 0xb2, 0x38, 0xba, 0x92, 0xaf, 0xae, 0x66, 0xbb, 0x1d, 0xa4, 0xaa, 0xa5, 0xb9, 0x56,
+	0x1f, 0x8d, 0xf9, 0x99, 0x00, 0xed, 0x79, 0xdc, 0x7a, 0xe6, 0x79, 0x0a, 0xb5, 0xa6, 0x06, 0xfc,
+	0xbb, 0x8f, 0x4a, 0x33, 0xc1, 0x93, 0x4e, 0xa5, 0x53, 0x3a, 0x09, 0x39, 0x26, 0x63, 0x97, 0x56,
+	0x8e, 0x49, 0xba, 0x04, 0xff, 0x4b, 0x85, 0x0d, 0x76, 0x68, 0xef, 0x21, 0xf7, 0xc3, 0xa6, 0x31,
+	0x16, 0x85, 0x0a, 0x31, 0xf8, 0x32, 0xc2, 0xe8, 0x1d, 0x98, 0xf2, 0xb0, 0xe1, 0xb4, 0xf6, 0x42,
+	0xdb, 0x77, 0x42, 0x3c, 0x70, 0xda, 0xc6, 0x78, 0xb4, 0x6c, 0x32, 0x81, 0x9f, 0xc7, 0xa8, 0xf9,
+	0x8b, 0xc0, 0xf5, 0x4c, 0xe1, 0x94, 0xc2, 0xd8, 0x69, 0xad, 0x13, 0x49, 0xd1, 0x98, 0x2e, 0x40,
+	0x3e, 0x70, 0x5c, 0xdb, 0x89, 0x85, 0xc7, 0xad, 0xb3, 0x20, 0x70, 0xdc, 0xd4, 0xca, 0x5f, 0x6b,
+	0x14, 0xad, 0x43, 0x9e, 0xc9, 0x64, 0x23, 0xd4, 0xc6, 0x58, 0xd4, 0x81, 0x7b, 0x17, 0xe8, 0x40,
+	0xb7, 0xae, 0x56, 0x3f, 0xc1, 0xdd, 0xdb, 0x90, 0xef, 0x3b, 0x92, 0x74, 0x02, 0xc6, 0xb7, 0x31,
+	0x6c, 0xc9, 0xe9, 0x11, 0x5a, 0x80, 0xff, 0x76, 0xd0, 0x51, 0x9e, 0x38, 0xe0, 0xd3, 0xa4, 0xfa,
+	0x6d, 0x14, 0xe8, 0xd9, 0x3b, 0x46, 0x3f, 0x12, 0x98, 0x39, 0xe7, 0xc2, 0xd3, 0x07, 0x43, 0x15,
+	0x65, 0xbc, 0x5d, 0xc5, 0x87, 0x97, 0xcc, 0x4a, 0x0e, 0xe5, 0x57, 0x02, 0x37, 0x87, 0x9d, 0x5e,
+	0xfa, 0xe4, 0x02, 0xbc, 0xd9, 0x97, 0xbc, 0xf8, 0xf4, 0xaa, 0xe9, 0x89, 0xbe, 0x4f, 0x04, 0xe6,
+	0xce, 0x7f, 0xa3, 0xe8, 0xa3, 0x6c, 0xea, 0xa1, 0x0f, 0x65, 0xf1, 0xf1, 0xe5, 0x13, 0x63, 0x35,
+	0x6b, 0xcb, 0x47, 0x27, 0xa5, 0x91, 0x1f, 0x27, 0xa5, 0x91, 0x0f, 0x9d, 0x12, 0x39, 0xea, 0x94,
+	0xc8, 0xf7, 0x4e, 0x89, 0xfc, 0xec, 0x94, 0xc8, 0x6b, 0xe8, 0xfd, 0x42, 0xbb, 0xff, 0x44, 0xdf,
+	0xd0, 0xea, 0x9f, 0x00, 0x00, 0x00, 0xff, 0xff, 0x3d, 0x38, 0x49, 0xb3, 0xce, 0x06, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -610,11 +702,11 @@ func (m *ConfigureContainerNetworkingRequest) MarshalTo(dAtA []byte) (int, error
 		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.ContainerID)))
 		i += copy(dAtA[i:], m.ContainerID)
 	}
-	if len(m.NetworkNamespace) > 0 {
+	if len(m.NetworkNamespaceID) > 0 {
 		dAtA[i] = 0x1a
 		i++
-		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.NetworkNamespace)))
-		i += copy(dAtA[i:], m.NetworkNamespace)
+		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.NetworkNamespaceID)))
+		i += copy(dAtA[i:], m.NetworkNamespaceID)
 	}
 	if m.XXX_unrecognized != nil {
 		i += copy(dAtA[i:], m.XXX_unrecognized)
@@ -637,27 +729,113 @@ func (m *ConfigureContainerNetworkingResponse) MarshalTo(dAtA []byte) (int, erro
 	_ = i
 	var l int
 	_ = l
-	if m.Success {
-		dAtA[i] = 0x8
-		i++
-		if m.Success {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
+	if len(m.Interfaces) > 0 {
+		for _, msg := range m.Interfaces {
+			dAtA[i] = 0xa
+			i++
+			i = encodeVarintNodenetsvc(dAtA, i, uint64(msg.Size()))
+			n, err := msg.MarshalTo(dAtA[i:])
+			if err != nil {
+				return 0, err
+			}
+			i += n
 		}
-		i++
 	}
-	if len(m.ResponseJson) > 0 {
-		dAtA[i] = 0x12
-		i++
-		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.ResponseJson)))
-		i += copy(dAtA[i:], m.ResponseJson)
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
 	}
-	if len(m.ErrorJson) > 0 {
+	return i, nil
+}
+
+func (m *ContainerIPAddress) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ContainerIPAddress) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if len(m.Version) > 0 {
+		dAtA[i] = 0xa
+		i++
+		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.Version)))
+		i += copy(dAtA[i:], m.Version)
+	}
+	if len(m.Ip) > 0 {
 		dAtA[i] = 0x1a
 		i++
-		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.ErrorJson)))
-		i += copy(dAtA[i:], m.ErrorJson)
+		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.Ip)))
+		i += copy(dAtA[i:], m.Ip)
+	}
+	if len(m.PrefixLength) > 0 {
+		dAtA[i] = 0x22
+		i++
+		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.PrefixLength)))
+		i += copy(dAtA[i:], m.PrefixLength)
+	}
+	if len(m.DefaultGateway) > 0 {
+		dAtA[i] = 0x2a
+		i++
+		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.DefaultGateway)))
+		i += copy(dAtA[i:], m.DefaultGateway)
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+func (m *ContainerNetworkInterface) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ContainerNetworkInterface) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if len(m.Name) > 0 {
+		dAtA[i] = 0xa
+		i++
+		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.Name)))
+		i += copy(dAtA[i:], m.Name)
+	}
+	if len(m.MacAddress) > 0 {
+		dAtA[i] = 0x12
+		i++
+		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.MacAddress)))
+		i += copy(dAtA[i:], m.MacAddress)
+	}
+	if len(m.NetworkNamespaceID) > 0 {
+		dAtA[i] = 0x1a
+		i++
+		i = encodeVarintNodenetsvc(dAtA, i, uint64(len(m.NetworkNamespaceID)))
+		i += copy(dAtA[i:], m.NetworkNamespaceID)
+	}
+	if len(m.Ipaddresses) > 0 {
+		for _, msg := range m.Ipaddresses {
+			dAtA[i] = 0x22
+			i++
+			i = encodeVarintNodenetsvc(dAtA, i, uint64(msg.Size()))
+			n, err := msg.MarshalTo(dAtA[i:])
+			if err != nil {
+				return 0, err
+			}
+			i += n
+		}
 	}
 	if m.XXX_unrecognized != nil {
 		i += copy(dAtA[i:], m.XXX_unrecognized)
@@ -750,7 +928,7 @@ func (m *ConfigureContainerNetworkingRequest) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovNodenetsvc(uint64(l))
 	}
-	l = len(m.NetworkNamespace)
+	l = len(m.NetworkNamespaceID)
 	if l > 0 {
 		n += 1 + l + sovNodenetsvc(uint64(l))
 	}
@@ -766,16 +944,69 @@ func (m *ConfigureContainerNetworkingResponse) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.Success {
-		n += 2
+	if len(m.Interfaces) > 0 {
+		for _, e := range m.Interfaces {
+			l = e.Size()
+			n += 1 + l + sovNodenetsvc(uint64(l))
+		}
 	}
-	l = len(m.ResponseJson)
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *ContainerIPAddress) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Version)
 	if l > 0 {
 		n += 1 + l + sovNodenetsvc(uint64(l))
 	}
-	l = len(m.ErrorJson)
+	l = len(m.Ip)
 	if l > 0 {
 		n += 1 + l + sovNodenetsvc(uint64(l))
+	}
+	l = len(m.PrefixLength)
+	if l > 0 {
+		n += 1 + l + sovNodenetsvc(uint64(l))
+	}
+	l = len(m.DefaultGateway)
+	if l > 0 {
+		n += 1 + l + sovNodenetsvc(uint64(l))
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *ContainerNetworkInterface) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Name)
+	if l > 0 {
+		n += 1 + l + sovNodenetsvc(uint64(l))
+	}
+	l = len(m.MacAddress)
+	if l > 0 {
+		n += 1 + l + sovNodenetsvc(uint64(l))
+	}
+	l = len(m.NetworkNamespaceID)
+	if l > 0 {
+		n += 1 + l + sovNodenetsvc(uint64(l))
+	}
+	if len(m.Ipaddresses) > 0 {
+		for _, e := range m.Ipaddresses {
+			l = e.Size()
+			n += 1 + l + sovNodenetsvc(uint64(l))
+		}
 	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
@@ -847,7 +1078,7 @@ func (this *ConfigureContainerNetworkingRequest) String() string {
 	s := strings.Join([]string{`&ConfigureContainerNetworkingRequest{`,
 		`RequestType:` + fmt.Sprintf("%v", this.RequestType) + `,`,
 		`ContainerID:` + fmt.Sprintf("%v", this.ContainerID) + `,`,
-		`NetworkNamespace:` + fmt.Sprintf("%v", this.NetworkNamespace) + `,`,
+		`NetworkNamespaceID:` + fmt.Sprintf("%v", this.NetworkNamespaceID) + `,`,
 		`XXX_unrecognized:` + fmt.Sprintf("%v", this.XXX_unrecognized) + `,`,
 		`}`,
 	}, "")
@@ -858,9 +1089,35 @@ func (this *ConfigureContainerNetworkingResponse) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&ConfigureContainerNetworkingResponse{`,
-		`Success:` + fmt.Sprintf("%v", this.Success) + `,`,
-		`ResponseJson:` + fmt.Sprintf("%v", this.ResponseJson) + `,`,
-		`ErrorJson:` + fmt.Sprintf("%v", this.ErrorJson) + `,`,
+		`Interfaces:` + strings.Replace(fmt.Sprintf("%v", this.Interfaces), "ContainerNetworkInterface", "ContainerNetworkInterface", 1) + `,`,
+		`XXX_unrecognized:` + fmt.Sprintf("%v", this.XXX_unrecognized) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ContainerIPAddress) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ContainerIPAddress{`,
+		`Version:` + fmt.Sprintf("%v", this.Version) + `,`,
+		`Ip:` + fmt.Sprintf("%v", this.Ip) + `,`,
+		`PrefixLength:` + fmt.Sprintf("%v", this.PrefixLength) + `,`,
+		`DefaultGateway:` + fmt.Sprintf("%v", this.DefaultGateway) + `,`,
+		`XXX_unrecognized:` + fmt.Sprintf("%v", this.XXX_unrecognized) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *ContainerNetworkInterface) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&ContainerNetworkInterface{`,
+		`Name:` + fmt.Sprintf("%v", this.Name) + `,`,
+		`MacAddress:` + fmt.Sprintf("%v", this.MacAddress) + `,`,
+		`NetworkNamespaceID:` + fmt.Sprintf("%v", this.NetworkNamespaceID) + `,`,
+		`Ipaddresses:` + strings.Replace(fmt.Sprintf("%v", this.Ipaddresses), "ContainerIPAddress", "ContainerIPAddress", 1) + `,`,
 		`XXX_unrecognized:` + fmt.Sprintf("%v", this.XXX_unrecognized) + `,`,
 		`}`,
 	}, "")
@@ -1287,7 +1544,7 @@ func (m *ConfigureContainerNetworkingRequest) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		case 3:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field NetworkNamespace", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field NetworkNamespaceID", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -1315,7 +1572,7 @@ func (m *ConfigureContainerNetworkingRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.NetworkNamespace = string(dAtA[iNdEx:postIndex])
+			m.NetworkNamespaceID = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -1372,10 +1629,10 @@ func (m *ConfigureContainerNetworkingResponse) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Success", wireType)
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Interfaces", wireType)
 			}
-			var v int
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowNodenetsvc
@@ -1385,15 +1642,83 @@ func (m *ConfigureContainerNetworkingResponse) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				v |= int(b&0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			m.Success = bool(v != 0)
-		case 2:
+			if msglen < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Interfaces = append(m.Interfaces, &ContainerNetworkInterface{})
+			if err := m.Interfaces[len(m.Interfaces)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipNodenetsvc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ContainerIPAddress) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowNodenetsvc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ContainerIPAddress: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ContainerIPAddress: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ResponseJson", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Version", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -1421,11 +1746,11 @@ func (m *ConfigureContainerNetworkingResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ResponseJson = string(dAtA[iNdEx:postIndex])
+			m.Version = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 3:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ErrorJson", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Ip", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -1453,7 +1778,255 @@ func (m *ConfigureContainerNetworkingResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ErrorJson = string(dAtA[iNdEx:postIndex])
+			m.Ip = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PrefixLength", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowNodenetsvc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PrefixLength = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DefaultGateway", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowNodenetsvc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DefaultGateway = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipNodenetsvc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ContainerNetworkInterface) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowNodenetsvc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ContainerNetworkInterface: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ContainerNetworkInterface: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowNodenetsvc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Name = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MacAddress", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowNodenetsvc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.MacAddress = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NetworkNamespaceID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowNodenetsvc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.NetworkNamespaceID = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Ipaddresses", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowNodenetsvc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthNodenetsvc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Ipaddresses = append(m.Ipaddresses, &ContainerIPAddress{})
+			if err := m.Ipaddresses[len(m.Ipaddresses)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

@@ -594,6 +594,35 @@ func (uvm *UtilityVM) addNIC(ctx context.Context, id string, endpoint *hns.HNSEn
 	return nil
 }
 
+// AddNICWithVF only makes a request to setup interface inside the LCOW guest
+func (uvm *UtilityVM) AddNICWithVF(ctx context.Context, cfg *guestrequest.LCOWNetworkAdapter) error {
+	if !uvm.isNetworkNamespaceSupported() {
+		return fmt.Errorf("guest does not support network namespaces and cannot add VF NIC %+v", cfg)
+	}
+	request := hcsschema.ModifySettingRequest{}
+	request.GuestRequest = guestrequest.GuestRequest{
+		ResourceType: guestrequest.ResourceTypeNetwork,
+		RequestType:  requesttype.Add,
+		Settings:     cfg,
+	}
+
+	return uvm.modify(ctx, &request)
+}
+
+func (uvm *UtilityVM) RemoveNICWithVF(ctx context.Context, cfg *guestrequest.LCOWNetworkAdapter) error {
+	if !uvm.isNetworkNamespaceSupported() {
+		return fmt.Errorf("guest does not support network namespaces and cannot remove VF NIC %+v", cfg)
+	}
+	request := hcsschema.ModifySettingRequest{}
+	request.GuestRequest = guestrequest.GuestRequest{
+		ResourceType: guestrequest.ResourceTypeNetwork,
+		RequestType:  requesttype.Remove,
+		Settings:     cfg,
+	}
+
+	return uvm.modify(ctx, &request)
+}
+
 func (uvm *UtilityVM) removeNIC(ctx context.Context, id string, endpoint *hns.HNSEndpoint) error {
 	request := hcsschema.ModifySettingRequest{
 		RequestType:  requesttype.Remove,

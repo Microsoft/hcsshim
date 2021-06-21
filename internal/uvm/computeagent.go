@@ -6,6 +6,7 @@ import (
 
 	"github.com/Microsoft/go-winio"
 	"github.com/Microsoft/hcsshim/internal/computeagent"
+	"github.com/Microsoft/hcsshim/internal/guestrequest"
 	hcsschema "github.com/Microsoft/hcsshim/internal/hcs/schema2"
 	"github.com/Microsoft/hcsshim/internal/hns"
 	"github.com/Microsoft/hcsshim/pkg/octtrpc"
@@ -30,6 +31,80 @@ type computeAgent struct {
 }
 
 var _ computeagent.ComputeAgentService = &computeAgent{}
+
+func (ca *computeAgent) AddNICWithVF(ctx context.Context, req *computeagent.AddNICWithVFInternalRequest) (*computeagent.AddNICWithVFInternalResponse, error) {
+	log.G(ctx).WithFields(logrus.Fields{
+		"req": req,
+	}).Info("AddNICVirtualFunction request")
+	if req.NamespaceID == "" || req.ContainerID == "" || req.NicID == "" {
+		return nil, status.Error(codes.InvalidArgument, "received empty field in request")
+	}
+
+	cfg := &guestrequest.LCOWNetworkAdapter{
+		NamespaceID:    req.NamespaceID,
+		ID:             req.NicID,
+		IPAddress:      req.Ipaddress,
+		PrefixLength:   uint8(req.IpaddressPrefixlength),
+		GatewayAddress: req.DefaultGateway,
+		IsVPCI:         true,
+	}
+	if err := ca.uvm.AddNICWithVF(ctx, cfg); err != nil {
+		return nil, err
+	}
+	return &computeagent.AddNICWithVFInternalResponse{}, nil
+}
+
+func (ca *computeAgent) DeleteNICWithVF(ctx context.Context, req *computeagent.DeleteNICWithVFInternalRequest) (*computeagent.DeleteNICWithVFInternalResponse, error) {
+	log.G(ctx).WithFields(logrus.Fields{
+		"req": req,
+	}).Info("DeleteNICVirtualFunction request")
+	if req.ContainerID == "" || req.NicID == "" {
+		return nil, status.Error(codes.InvalidArgument, "received empty field in request")
+	}
+
+	cfg := &guestrequest.LCOWNetworkAdapter{
+		ID:     req.NicID,
+		IsVPCI: true,
+	}
+	if err := ca.uvm.RemoveNICWithVF(ctx, cfg); err != nil {
+		return nil, err
+	}
+
+	return &computeagent.DeleteNICWithVFInternalResponse{}, nil
+}
+
+func (ca *computeAgent) AssignVF(ctx context.Context, req *computeagent.AssignVFInternalRequest) (*computeagent.AssignVFInternalResponse, error) {
+	log.G(ctx).WithFields(logrus.Fields{
+		"containerID":          req.ContainerID,
+		"deviceID":             req.DeviceID,
+		"virtualFunctionIndex": req.VirtualFunctionIndex,
+	}).Info("AssignVF request")
+
+	if req.DeviceID == "" {
+		return nil, status.Error(codes.InvalidArgument, "received empty field in request")
+	}
+
+	dev, err := ca.uvm.AssignDevice(ctx, req.DeviceID, uint16(req.VirtualFunctionIndex))
+	if err != nil {
+		return nil, err
+	}
+	return &computeagent.AssignVFInternalResponse{ID: dev.VMBusGUID}, nil
+}
+
+func (ca *computeAgent) RemoveVF(ctx context.Context, req *computeagent.RemoveVFInternalRequest) (*computeagent.RemoveVFInternalResponse, error) {
+	log.G(ctx).WithFields(logrus.Fields{
+		"containerID": req.ContainerID,
+		"deviceID":    req.DeviceID,
+	}).Info("RemoveVF request")
+
+	if req.DeviceID == "" {
+		return nil, status.Error(codes.InvalidArgument, "received empty field in request")
+	}
+	if err := ca.uvm.RemoveDevice(ctx, req.DeviceID, uint16(req.VirtualFunctionIndex)); err != nil {
+		return nil, err
+	}
+	return &computeagent.RemoveVFInternalResponse{}, nil
+}
 
 // AddNIC will add a NIC to the computeagent services hosting UVM.
 func (ca *computeAgent) AddNIC(ctx context.Context, req *computeagent.AddNICInternalRequest) (*computeagent.AddNICInternalResponse, error) {
