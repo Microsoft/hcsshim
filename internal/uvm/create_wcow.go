@@ -221,7 +221,7 @@ func CreateWCOW(ctx context.Context, opts *OptionsWCOW) (_ *UtilityVM, err error
 		scsiControllerCount:     1,
 		vsmbDirShares:           make(map[string]*VSMBShare),
 		vsmbFileShares:          make(map[string]*VSMBShare),
-		vpciDevices:             make(map[string]*VPCIDevice),
+		vpciDevices:             make(map[VPCIDeviceKey]*VPCIDevice),
 		physicallyBacked:        !opts.AllowOvercommit,
 		devicesPhysicallyBacked: opts.FullyPhysicallyBacked,
 		vsmbNoDirectMap:         opts.NoDirectMap,

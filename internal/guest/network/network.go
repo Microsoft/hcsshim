@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Microsoft/hcsshim/internal/guest/storage"
+	"github.com/Microsoft/hcsshim/internal/guest/storage/pci"
 	"github.com/Microsoft/hcsshim/internal/guest/storage/vmbus"
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/oc"
@@ -104,20 +106,30 @@ func MergeValues(first, second []string) []string {
 // Windows host) to its corresponding interface name (e.g. "eth0").
 //
 // Will retry the operation until `ctx` is exceeded or canceled.
-func InstanceIDToName(ctx context.Context, id string) (_ string, err error) {
+func InstanceIDToName(ctx context.Context, id string, isVPCI bool) (_ string, err error) {
 	ctx, span := trace.StartSpan(ctx, "network::InstanceIDToName")
 	defer span.End()
 	defer func() { oc.SetSpanStatus(span, err) }()
 
-	id = strings.ToLower(id)
-	span.AddAttributes(trace.StringAttribute("adapterInstanceID", id))
+	vmbusID := strings.ToLower(id)
+	span.AddAttributes(trace.StringAttribute("adapterInstanceID", vmbusID))
 
-	vmBusSubPath := filepath.Join(id, "net")
-	devicePath, err := vmbus.WaitForDevicePath(ctx, vmBusSubPath)
+	netDevicePath := ""
+	if isVPCI {
+		pciDevicePath, err := pci.FindDeviceFullPath(ctx, vmbusID)
+		if err != nil {
+			return "", err
+		}
+		pciNetDirPattern := filepath.Join(pciDevicePath, "net")
+		netDevicePath, err = storage.WaitForFileMatchingPattern(ctx, pciNetDirPattern)
+	} else {
+		vmBusNetSubPath := filepath.Join(vmbusID, "net")
+		netDevicePath, err = vmbus.WaitForDevicePath(ctx, vmBusNetSubPath)
+	}
 
 	var deviceDirs []os.FileInfo
 	for {
-		deviceDirs, err = ioutil.ReadDir(devicePath)
+		deviceDirs, err = ioutil.ReadDir(netDevicePath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				select {
@@ -128,16 +140,16 @@ func InstanceIDToName(ctx context.Context, id string) (_ string, err error) {
 					continue
 				}
 			} else {
-				return "", errors.Wrapf(err, "failed to read vmbus network device from /sys filesystem for adapter %s", id)
+				return "", errors.Wrapf(err, "failed to read vmbus network device from /sys filesystem for adapter %s", vmbusID)
 			}
 		}
 		break
 	}
 	if len(deviceDirs) == 0 {
-		return "", errors.Errorf("no interface name found for adapter %s", id)
+		return "", errors.Errorf("no interface name found for adapter %s", vmbusID)
 	}
 	if len(deviceDirs) > 1 {
-		return "", errors.Errorf("multiple interface names found for adapter %s", id)
+		return "", errors.Errorf("multiple interface names found for adapter %s", vmbusID)
 	}
 	ifname := deviceDirs[0].Name()
 	log.G(ctx).WithField("ifname", ifname).Debug("resolved ifname")

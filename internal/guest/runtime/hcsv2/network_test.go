@@ -97,7 +97,7 @@ func Test_removeNetworkNamespace_HasAdapters(t *testing.T) {
 
 	ns := getOrAddNetworkNamespace(t.Name())
 
-	networkInstanceIDToName = func(ctx context.Context, id string) (string, error) {
+	networkInstanceIDToName = func(ctx context.Context, id string, _ bool) (string, error) {
 		return "/dev/sdz", nil
 	}
 	err := ns.AddAdapter(context.Background(), &prot.NetworkAdapterV2{ID: "test"})

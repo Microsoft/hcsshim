@@ -16,7 +16,49 @@ service NetworkConfigProxy {
     rpc GetNetwork(GetNetworkRequest) returns (GetNetworkResponse) {}
     rpc GetEndpoints(GetEndpointsRequest) returns (GetEndpointsResponse) {}
     rpc GetNetworks(GetNetworksRequest) returns (GetNetworksResponse) {}
+    rpc AssignVF(AssignVFRequest) returns (AssignVFResponse) {}
+    rpc RemoveVF(RemoveVFRequest) returns (RemoveVFResponse) {}
+    rpc AddNICVirtualFunction (AddNICVirtualFunctionRequest) returns (AddNICVirtualFunctionResponse) {}
+    rpc DeleteNICVirtualFunction (DeleteNICVirtualFunctionRequest) returns (DeleteNICVirtualFunctionResponse) {}
 }
+
+message DeleteNICVirtualFunctionRequest {
+    string namespace_id = 1;
+    string container_id = 2;
+    string device_id = 3;
+}
+
+message DeleteNICVirtualFunctionResponse {}
+
+message AddNICVirtualFunctionRequest {
+    string namespace_id = 1;
+    string container_id = 2;
+    string device_id = 3;
+    string macaddress = 4;
+    string ipaddress = 5;
+    uint32 ipaddress_prefixlength = 6;
+    string gateway = 7;
+}
+
+message AddNICVirtualFunctionResponse {}
+
+message AssignVFRequest {
+    string container_id = 1;
+    string device_id = 2;
+    uint32 virtual_function_index = 3;
+}
+
+message AssignVFResponse {
+    string id = 1;
+}
+
+message RemoveVFRequest {
+    string container_id = 1;
+    string device_id = 2;
+    uint32 virtual_function_index = 3;
+}
+
+message RemoveVFResponse {} 
 
 message AddNICRequest {
     string container_id = 1;

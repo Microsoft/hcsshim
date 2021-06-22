@@ -33,8 +33,15 @@ type VPCIDevice struct {
 	VMBusGUID string
 	// deviceInstanceID is the instance ID of the device on the host
 	deviceInstanceID string
+	// virtualFunctionIndex is the vf index for the vpci device, if specified
+	virtualFunctionIndex uint16
 	// refCount stores the number of references to this device in the UVM
 	refCount uint32
+}
+
+type VPCIDeviceKey struct {
+	deviceInstanceID     string
+	virtualFunctionIndex uint16
 }
 
 // GetAssignedDeviceVMBUSInstanceID returns the instance ID of the VMBUS channel device node created.
@@ -56,7 +63,7 @@ func (uvm *UtilityVM) GetAssignedDeviceVMBUSInstanceID(vmBusChannelGUID string) 
 
 // Release frees the resources of the corresponding vpci device
 func (vpci *VPCIDevice) Release(ctx context.Context) error {
-	if err := vpci.vm.removeDevice(ctx, vpci.deviceInstanceID); err != nil {
+	if err := vpci.vm.RemoveDevice(ctx, vpci.deviceInstanceID, vpci.virtualFunctionIndex); err != nil {
 		return fmt.Errorf("failed to remove VPCI device: %s", err)
 	}
 	return nil
@@ -65,20 +72,25 @@ func (vpci *VPCIDevice) Release(ctx context.Context) error {
 // AssignDevice assigns a vpci device to the uvm
 // if the device already exists, the stored VPCIDevice's ref count is increased
 // and the VPCIDevice is returned.
-// Otherwise, a new request is made to assign the target device indicated by the deviceID
+// Otherwise, a new request is made to assign the target device indicated by the deviceID and index
 // onto the UVM. A new VPCIDevice entry is made on the UVM and the VPCIDevice is returned
 // to the caller
-func (uvm *UtilityVM) AssignDevice(ctx context.Context, deviceID string) (*VPCIDevice, error) {
+func (uvm *UtilityVM) AssignDevice(ctx context.Context, deviceID string, index uint16) (*VPCIDevice, error) {
 	guid, err := guid.NewV4()
 	if err != nil {
 		return nil, err
 	}
 	vmBusGUID := guid.String()
 
+	key := VPCIDeviceKey{
+		deviceInstanceID:     deviceID,
+		virtualFunctionIndex: index,
+	}
+
 	uvm.m.Lock()
 	defer uvm.m.Unlock()
 
-	existingVPCIDevice := uvm.vpciDevices[deviceID]
+	existingVPCIDevice := uvm.vpciDevices[key]
 	if existingVPCIDevice != nil {
 		existingVPCIDevice.refCount++
 		return existingVPCIDevice, nil
@@ -88,6 +100,7 @@ func (uvm *UtilityVM) AssignDevice(ctx context.Context, deviceID string) (*VPCID
 		Functions: []hcsschema.VirtualPciFunction{
 			{
 				DeviceInstancePath: deviceID,
+				VirtualFunction:    index,
 			},
 		},
 	}
@@ -117,30 +130,36 @@ func (uvm *UtilityVM) AssignDevice(ctx context.Context, deviceID string) (*VPCID
 		return nil, err
 	}
 	result := &VPCIDevice{
-		vm:               uvm,
-		VMBusGUID:        vmBusGUID,
-		deviceInstanceID: deviceID,
-		refCount:         1,
+		vm:                   uvm,
+		VMBusGUID:            vmBusGUID,
+		deviceInstanceID:     deviceID,
+		virtualFunctionIndex: index,
+		refCount:             1,
 	}
-	uvm.vpciDevices[deviceID] = result
+	uvm.vpciDevices[key] = result
 	return result, nil
 }
 
 // removeDevice removes a vpci device from a uvm when there are
 // no more references to a given VPCIDevice. Otherwise, decrements
 // the reference count of the stored VPCIDevice and returns nil.
-func (uvm *UtilityVM) removeDevice(ctx context.Context, deviceInstanceID string) error {
+func (uvm *UtilityVM) RemoveDevice(ctx context.Context, deviceID string, index uint16) error {
+	key := VPCIDeviceKey{
+		deviceInstanceID:     deviceID,
+		virtualFunctionIndex: index,
+	}
+
 	uvm.m.Lock()
 	defer uvm.m.Unlock()
 
-	vpci := uvm.vpciDevices[deviceInstanceID]
+	vpci := uvm.vpciDevices[key]
 	if vpci == nil {
-		return fmt.Errorf("no device with ID %s is present on the uvm %s", deviceInstanceID, uvm.ID())
+		return fmt.Errorf("no device with ID %s and index %v is present on the uvm %s", deviceID, index, uvm.ID())
 	}
 
 	vpci.refCount--
 	if vpci.refCount == 0 {
-		delete(uvm.vpciDevices, deviceInstanceID)
+		delete(uvm.vpciDevices, key)
 		return uvm.modify(ctx, &hcsschema.ModifySettingRequest{
 			ResourcePath: fmt.Sprintf(resourcepaths.VirtualPCIResourceFormat, vpci.VMBusGUID),
 			RequestType:  requesttype.Remove,
