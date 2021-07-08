@@ -35,12 +35,34 @@ func getGPUVHDPath(coi *createOptionsInternal) (string, error) {
 	return gpuVHDPath, nil
 }
 
+func getContainerExtraLayers(annotations map[string]string) ([]string, error) {
+	csExtraLayers, ok := annotations[oci.AnnotationContainerExtraLayers]
+	if !ok || csExtraLayers == "" {
+		return nil, nil
+	}
+	layers := strings.Split(csExtraLayers, ",")
+	for _, l := range layers {
+		if _, err := os.Stat(l); err != nil {
+			return nil, errors.Wrapf(err, "failed to find path to container's extra layers at %s", l)
+		}
+	}
+	return layers, nil
+}
+
 func allocateLinuxResources(ctx context.Context, coi *createOptionsInternal, r *resources.Resources, isSandbox bool) error {
 	if coi.Spec.Root == nil {
 		coi.Spec.Root = &specs.Root{}
 	}
 	containerRootInUVM := r.ContainerRootInUVM()
 	if coi.Spec.Windows != nil && len(coi.Spec.Windows.LayerFolders) > 0 {
+		driverLayers, err := getContainerExtraLayers(coi.Spec.Annotations)
+		if err != nil {
+			return errors.Wrap(err, "failed to get driver layers for container")
+		}
+		coi.Spec.Windows.LayerFolders = append(driverLayers, coi.Spec.Windows.LayerFolders...)
+
+		log.G(ctx).WithField("layerdirs", coi.Spec.Windows.LayerFolders).Info("the new layer dirs with the container driver layers")
+
 		log.G(ctx).Debug("hcsshim::allocateLinuxResources mounting storage")
 		rootPath, err := layers.MountContainerLayers(ctx, coi.Spec.Windows.LayerFolders, containerRootInUVM, "", coi.HostingSystem)
 		if err != nil {

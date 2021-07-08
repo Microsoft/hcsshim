@@ -87,6 +87,10 @@ const (
 	// files and information needed to install given driver(s). This may include .sys,
 	// .inf, .cer, and/or other files used during standard installation with pnputil.
 	AnnotationAssignedDeviceKernelDrivers = "io.microsoft.assigneddevice.kerneldrivers"
+	// AnnotationContainerExtraLayers contains a comma separated list of directories that contain a
+	// layer vhd, named layer.vhd, that should additionally be added to the container's list of layers
+	// to be created with.
+	AnnotationContainerExtraLayers = "io.microsoft.container.extralayers"
 	// AnnotationHostProcessInheritUser indicates whether to ignore the username passed in to run a host process
 	// container as and instead inherit the user token from the executable that is launching the container process.
 	AnnotationHostProcessInheritUser = "microsoft.com/hostprocess-inherit-user"

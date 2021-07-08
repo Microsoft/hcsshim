@@ -774,3 +774,57 @@ func Test_RunContainer_ShareScratch_CheckSize_LCOW(t *testing.T) {
 		t.Fatalf("expected available rootfs size to be the same, got: %s and %s", availableSizeContainerOne, availableSizeContainerTwo)
 	}
 }
+
+func Test_RunContainer_ExtraLayers_LCOW(t *testing.T) {
+	requireFeatures(t, featureLCOW)
+
+	pullRequiredLcowImages(t, []string{imageLcowK8sPause, imageLcowAlpine})
+
+	client := newTestRuntimeClient(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sandboxRequest := getRunPodSandboxRequest(t, lcowRuntimeHandler, nil)
+	podID := runPodSandbox(t, client, ctx, sandboxRequest)
+	defer removePodSandbox(t, client, ctx, podID)
+	defer stopPodSandbox(t, client, ctx, podID)
+
+	request := &runtime.CreateContainerRequest{
+		PodSandboxId: podID,
+		Config: &runtime.ContainerConfig{
+			Metadata: &runtime.ContainerMetadata{
+				Name: t.Name() + "-Container",
+			},
+			Image: &runtime.ImageSpec{
+				Image: imageLcowAlpine,
+			},
+			Command: []string{
+				"top",
+			},
+			Annotations: map[string]string{
+				"io.microsoft.container.extralayers": "C:\\ContainerPlat\\gpu",
+			},
+		},
+		SandboxConfig: sandboxRequest.Config,
+	}
+
+	containerID := createContainer(t, client, ctx, request)
+	defer removeContainer(t, client, ctx, containerID)
+	startContainer(t, client, ctx, containerID)
+	defer stopContainer(t, client, ctx, containerID)
+
+	// validate that a file from the layer exists in the container now
+	cmd := []string{"ls", "/bin/nvidia-smi"}
+	containerExecReq := &runtime.ExecSyncRequest{
+		ContainerId: containerID,
+		Cmd:         cmd,
+		Timeout:     20,
+	}
+	r := execSync(t, client, ctx, containerExecReq)
+	if r.ExitCode != 0 {
+		t.Fatalf("failed with exit code %d: %s", r.ExitCode, string(r.Stderr))
+	}
+	if string(r.Stdout) == "" {
+		t.Fatal("did not find expected file in container")
+	}
+}
