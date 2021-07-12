@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net"
 	"strings"
+	"sync"
 
+	"github.com/Microsoft/hcsshim/osversion"
 	"github.com/sirupsen/logrus"
 )
 
@@ -33,7 +35,7 @@ type HNSEndpoint struct {
 	EncapOverhead      uint16            `json:",omitempty"`
 }
 
-//SystemType represents the type of the system on which actions are done
+// SystemType represents the type of the system on which actions are done
 type SystemType string
 
 // SystemType const
@@ -41,6 +43,14 @@ const (
 	ContainerType      SystemType = "Container"
 	VirtualMachineType SystemType = "VirtualMachine"
 	HostType           SystemType = "Host"
+)
+
+var (
+	// Server versions before 2019 (RS5), including Server 2016 (RS1) do not
+	// support concurrent add/delete of endpoints. Therefore, we need to use
+	// this mutex and serialize the add/delete of endpoints on those versions.
+	endpointMu   sync.RWMutex
+	windowsBuild = osversion.Build()
 )
 
 // EndpointAttachDetachRequest is the structure used to send request to the container to modify the system
@@ -61,6 +71,16 @@ type EndpointResquestResponse struct {
 // HNSEndpointRequest makes a HNS call to modify/query a network endpoint
 func HNSEndpointRequest(method, path, request string) (*HNSEndpoint, error) {
 	endpoint := &HNSEndpoint{}
+	if windowsBuild < osversion.RS5 {
+		switch method {
+		case "GET":
+			endpointMu.RLock()
+			defer endpointMu.RUnlock()
+		case "DELETE", "POST":
+			endpointMu.Lock()
+			defer endpointMu.Unlock()
+		}
+	}
 	err := hnsCall(method, "/endpoints/"+path, request, &endpoint)
 	if err != nil {
 		return nil, err
@@ -72,6 +92,10 @@ func HNSEndpointRequest(method, path, request string) (*HNSEndpoint, error) {
 // HNSListEndpointRequest makes a HNS call to query the list of available endpoints
 func HNSListEndpointRequest() ([]HNSEndpoint, error) {
 	var endpoint []HNSEndpoint
+	if windowsBuild < osversion.RS5 {
+		endpointMu.RLock()
+		defer endpointMu.RUnlock()
+	}
 	err := hnsCall("GET", "/endpoints/", "", &endpoint)
 	if err != nil {
 		return nil, err
@@ -151,6 +175,10 @@ func (endpoint *HNSEndpoint) Update() (*HNSEndpoint, error) {
 	if err != nil {
 		return nil, err
 	}
+	if windowsBuild < osversion.RS5 {
+		endpointMu.Lock()
+		defer endpointMu.Unlock()
+	}
 	err = hnsCall("POST", "/endpoints/"+endpoint.Id, string(jsonString), &endpoint)
 
 	return endpoint, err
@@ -214,6 +242,10 @@ func (endpoint *HNSEndpoint) ContainerAttach(containerID string, compartmentID u
 	if err != nil {
 		return err
 	}
+	if windowsBuild < osversion.RS5 {
+		endpointMu.Lock()
+		defer endpointMu.Unlock()
+	}
 	return hnsCall("POST", "/endpoints/"+endpoint.Id+"/attach", string(jsonString), &response)
 }
 
@@ -233,6 +265,10 @@ func (endpoint *HNSEndpoint) ContainerDetach(containerID string) error {
 	if err != nil {
 		return err
 	}
+	if windowsBuild < osversion.RS5 {
+		endpointMu.Lock()
+		defer endpointMu.Unlock()
+	}
 	return hnsCall("POST", "/endpoints/"+endpoint.Id+"/detach", string(jsonString), &response)
 }
 
@@ -250,6 +286,10 @@ func (endpoint *HNSEndpoint) HostAttach(compartmentID uint16) error {
 	jsonString, err := json.Marshal(requestMessage)
 	if err != nil {
 		return err
+	}
+	if windowsBuild < osversion.RS5 {
+		endpointMu.Lock()
+		defer endpointMu.Unlock()
 	}
 	return hnsCall("POST", "/endpoints/"+endpoint.Id+"/attach", string(jsonString), &response)
 
@@ -269,6 +309,10 @@ func (endpoint *HNSEndpoint) HostDetach() error {
 	if err != nil {
 		return err
 	}
+	if windowsBuild < osversion.RS5 {
+		endpointMu.Lock()
+		defer endpointMu.Unlock()
+	}
 	return hnsCall("POST", "/endpoints/"+endpoint.Id+"/detach", string(jsonString), &response)
 }
 
@@ -287,6 +331,10 @@ func (endpoint *HNSEndpoint) VirtualMachineNICAttach(virtualMachineNICName strin
 	if err != nil {
 		return err
 	}
+	if windowsBuild < osversion.RS5 {
+		endpointMu.Lock()
+		defer endpointMu.Unlock()
+	}
 	return hnsCall("POST", "/endpoints/"+endpoint.Id+"/attach", string(jsonString), &response)
 }
 
@@ -304,6 +352,10 @@ func (endpoint *HNSEndpoint) VirtualMachineNICDetach() error {
 	jsonString, err := json.Marshal(requestMessage)
 	if err != nil {
 		return err
+	}
+	if windowsBuild < osversion.RS5 {
+		endpointMu.Lock()
+		defer endpointMu.Unlock()
 	}
 	return hnsCall("POST", "/endpoints/"+endpoint.Id+"/detach", string(jsonString), &response)
 }
