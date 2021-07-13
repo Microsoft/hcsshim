@@ -89,6 +89,10 @@ func (r *legacyLayerReaderWrapper) Close() (err error) {
 	defer func() { oc.SetSpanStatus(r.s, err) }()
 
 	err = r.legacyLayerReader.Close()
+	// if the layer is not Destroyed at hcs level before removing
+	// we might enter in a race-condition for large containers
+	// which end-up in a hang of the os.RemoveAll() call
+	DestroyLayer(r.ctx, r.root)
 	os.RemoveAll(r.root)
 	return err
 }
