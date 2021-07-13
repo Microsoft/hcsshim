@@ -263,7 +263,7 @@ func (job *JobObject) Close() error {
 	return nil
 }
 
-// Assign assigns a process to the job object.
+// Assign assigns a process to the job object. The process must be running and `pid` must be a valid process ID.
 func (job *JobObject) Assign(pid uint32) error {
 	job.handleLock.RLock()
 	defer job.handleLock.RUnlock()
@@ -283,11 +283,33 @@ func (job *JobObject) Assign(pid uint32) error {
 	return windows.AssignProcessToJobObject(job.handle, hProc)
 }
 
+// AssignAtStart modifies a ProcThreadAttributeList to make it so the process being launched with the
+// attribute list will be started in the job to begin with, instead of having to be added after it's up and running
+// with `Assign`.
+func (job *JobObject) AssignAtStart(procAttrList *windows.ProcThreadAttributeList) error {
+	job.handleLock.RLock()
+	defer job.handleLock.RUnlock()
+
+	if job.handle == 0 {
+		return ErrAlreadyClosed
+	}
+
+	return procAttrList.Update(
+		winapi.PROC_THREAD_ATTRIBUTE_JOB_LIST,
+		0,
+		unsafe.Pointer(&job.handle),
+		unsafe.Sizeof(job.handle),
+		nil,
+		nil,
+	)
+}
+
 // Terminate terminates the job, essentially calls TerminateProcess on every process in the
 // job.
 func (job *JobObject) Terminate(exitCode uint32) error {
 	job.handleLock.RLock()
 	defer job.handleLock.RUnlock()
+
 	if job.handle == 0 {
 		return ErrAlreadyClosed
 	}

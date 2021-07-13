@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os/exec"
 	"sync"
 
 	"github.com/Microsoft/hcsshim/internal/cow"
+	"github.com/Microsoft/hcsshim/internal/exec"
 	"github.com/Microsoft/hcsshim/internal/guestrequest"
 	"github.com/Microsoft/hcsshim/internal/hcs"
 	"github.com/Microsoft/hcsshim/internal/log"
