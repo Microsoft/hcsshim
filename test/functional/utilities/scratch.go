@@ -24,6 +24,17 @@ func init() {
 	}
 }
 
+// CreateWCOWBlankBaseLayer creates an as-blank-as-possible base WCOW layer, which
+// can be used as the base of a WCOW RW layer when it's not going to be the container's
+// scratch mount.
+func CreateWCOWBlankBaseLayer(ctx context.Context, t *testing.T) []string {
+	tempDir := CreateTempDir(t)
+	if err := wclayer.ConvertToBaseLayer(context.Background(), tempDir); err != nil {
+		t.Fatalf("Failed ConvertToBaseLayer: %s", err)
+	}
+	return []string{tempDir}
+}
+
 // CreateWCOWBlankRWLayer uses HCS to create a temp test directory containing a
 // read-write layer containing a disk that can be used as a containers scratch
 // space. The VHD is created with VM group access

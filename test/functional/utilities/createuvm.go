@@ -10,7 +10,7 @@ import (
 
 // CreateWCOWUVM creates a WCOW utility VM with all default options. Returns the
 // UtilityVM object; folder used as its scratch
-func CreateWCOWUVM(ctx context.Context, t *testing.T, id, image string) (*uvm.UtilityVM, []string, string) {
+func CreateWCOWUVM(ctx context.Context, t *testing.T, id, image string) (*uvm.UtilityVM, string) {
 	return CreateWCOWUVMFromOptsWithImage(ctx, t, uvm.NewDefaultOptionsWCOW(id, ""), image)
 
 }
@@ -35,7 +35,7 @@ func CreateWCOWUVMFromOpts(ctx context.Context, t *testing.T, opts *uvm.OptionsW
 // CreateWCOWUVMFromOptsWithImage creates a WCOW utility VM with the passed opts
 // builds the LayerFolders based on `image`. Returns the UtilityVM object;
 // folder used as its scratch
-func CreateWCOWUVMFromOptsWithImage(ctx context.Context, t *testing.T, opts *uvm.OptionsWCOW, image string) (*uvm.UtilityVM, []string, string) {
+func CreateWCOWUVMFromOptsWithImage(ctx context.Context, t *testing.T, opts *uvm.OptionsWCOW, image string) (*uvm.UtilityVM, string) {
 	if opts == nil {
 		t.Fatal("opts must be set")
 	}
@@ -51,7 +51,7 @@ func CreateWCOWUVMFromOptsWithImage(ctx context.Context, t *testing.T, opts *uvm
 	opts.LayerFolders = append(opts.LayerFolders, uvmLayers...)
 	opts.LayerFolders = append(opts.LayerFolders, scratchDir)
 
-	return CreateWCOWUVMFromOpts(ctx, t, opts), uvmLayers, scratchDir
+	return CreateWCOWUVMFromOpts(ctx, t, opts), scratchDir
 }
 
 // CreateLCOWUVM with all default options.

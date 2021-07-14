@@ -20,7 +20,7 @@ func runMemStartLCOWTest(t *testing.T, opts *uvm.OptionsLCOW) {
 }
 
 func runMemStartWCOWTest(t *testing.T, opts *uvm.OptionsWCOW) {
-	u, _, scratchDir := testutilities.CreateWCOWUVMFromOptsWithImage(context.Background(), t, opts, "microsoft/nanoserver")
+	u, scratchDir := testutilities.CreateWCOWUVMFromOptsWithImage(context.Background(), t, opts, "microsoft/nanoserver")
 	defer os.RemoveAll(scratchDir)
 	u.Close()
 }

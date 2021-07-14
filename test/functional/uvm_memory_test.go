@@ -45,7 +45,7 @@ func TestUVMMemoryUpdateWCOW(t *testing.T) {
 	opts := uvm.NewDefaultOptionsWCOW(t.Name(), "")
 	opts.MemorySizeInMB = 1024 * 2
 
-	u, _, uvmScratchDir := testutilities.CreateWCOWUVMFromOptsWithImage(ctx, t, opts, "mcr.microsoft.com/windows/nanoserver:1909")
+	u, uvmScratchDir := testutilities.CreateWCOWUVMFromOptsWithImage(ctx, t, opts, "mcr.microsoft.com/windows/nanoserver:1909")
 	defer os.RemoveAll(uvmScratchDir)
 	defer u.Close()
 

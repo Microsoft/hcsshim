@@ -38,9 +38,11 @@ func TestSCSIAddRemoveLCOW(t *testing.T) {
 func TestSCSIAddRemoveWCOW(t *testing.T) {
 	testutilities.RequiresBuild(t, osversion.RS5)
 	// TODO make the image configurable to the build we're testing on
-	u, layers, uvmScratchDir := testutilities.CreateWCOWUVM(context.Background(), t, t.Name(), "mcr.microsoft.com/windows/nanoserver:1903")
+	u, uvmScratchDir := testutilities.CreateWCOWUVM(context.Background(), t, t.Name(), "mcr.microsoft.com/windows/nanoserver:1903")
 	defer os.RemoveAll(uvmScratchDir)
 	defer u.Close()
+	layers := testutilities.CreateWCOWBlankBaseLayer(context.Background(), t)
+	defer os.RemoveAll(layers[0])
 
 	testSCSIAddRemoveSingle(t, u, `c:\`, "windows", layers)
 }
