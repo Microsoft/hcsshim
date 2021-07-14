@@ -3,7 +3,10 @@
 package hcsv2
 
 import (
+	"context"
 	"fmt"
+	"github.com/Microsoft/hcsshim/internal/log"
+	"github.com/opencontainers/runc/libcontainer/devices"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -40,6 +43,18 @@ func isInMounts(target string, mounts []oci.Mount) bool {
 		}
 	}
 	return false
+}
+
+// removeMount removes mount from the array if `target` matches `Destination`
+func removeMount(target string, mounts []oci.Mount) []oci.Mount {
+	var result []oci.Mount
+	for _, m := range mounts {
+		if m.Destination == target {
+			continue
+		}
+		result = append(result, m)
+	}
+	return result
 }
 
 func setProcess(spec *oci.Spec) {
@@ -151,4 +166,68 @@ func getGroup(spec *oci.Spec, filter func(user.Group) bool) (user.Group, error) 
 		return user.Group{}, errors.Errorf("expected exactly 1 group matched '%d'", len(groups))
 	}
 	return groups[0], nil
+}
+
+// applyAnnotationsToSpec modifies the spec based on additional information from annotations
+func applyAnnotationsToSpec(ctx context.Context, spec *oci.Spec) error {
+	// Check if we need to override container's /dev/shm
+	if val, ok := spec.Annotations["io.microsoft.container.storage.shm.size-kb"]; ok {
+		sz, err := strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return errors.Wrap(err, "/dev/shm size must be a valid integer")
+		}
+		if sz <= 0 {
+			return errors.Errorf("/dev/shm size must be a positive integer, got: %d", sz)
+		}
+
+		size := fmt.Sprintf("size=%dk", sz)
+		mt := oci.Mount{
+			Destination: "/dev/shm",
+			Type:        "tmpfs",
+			Source:      "shm",
+			Options:     []string{"nosuid", "noexec", "nodev", "mode=1777", size},
+		}
+		spec.Mounts = removeMount("/dev/shm", spec.Mounts)
+		spec.Mounts = append(spec.Mounts, mt)
+	}
+
+	// Check if we need to do any capability/device mappings
+	if spec.Annotations["io.microsoft.virtualmachine.lcow.privileged"] == "true" {
+		log.G(ctx).Debug("'io.microsoft.virtualmachine.lcow.privileged' set for privileged container")
+
+		// Add all host devices
+		hostDevices, err := devices.HostDevices()
+		if err != nil {
+			return err
+		}
+		for _, hostDevice := range hostDevices {
+			addLinuxDeviceToSpec(ctx, hostDevice, spec, false)
+		}
+
+		// Set the cgroup access
+		spec.Linux.Resources.Devices = []oci.LinuxDeviceCgroup{
+			{
+				Allow:  true,
+				Access: "rwm",
+			},
+		}
+	} else {
+		tempLinuxDevices := spec.Linux.Devices
+		spec.Linux.Devices = []oci.LinuxDevice{}
+		for _, ld := range tempLinuxDevices {
+			hostDevice, err := devices.DeviceFromPath(ld.Path, "rwm")
+			if err != nil {
+				return err
+			}
+			addLinuxDeviceToSpec(ctx, hostDevice, spec, true)
+		}
+	}
+
+	// Check if we need to set non-default user
+	if userstr, ok := spec.Annotations["io.microsoft.lcow.userstr"]; ok {
+		if err := setUserStr(spec, userstr); err != nil {
+			return err
+		}
+	}
+	return nil
 }

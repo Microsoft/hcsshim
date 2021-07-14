@@ -11,7 +11,6 @@ import (
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/oc"
 	"github.com/opencontainers/runc/libcontainer/configs"
-	"github.com/opencontainers/runc/libcontainer/devices"
 	oci "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"go.opencensus.io/trace"
@@ -119,42 +118,8 @@ func setupWorkloadContainerSpec(ctx context.Context, sbid, id string, spec *oci.
 	// also has a concept of a sandbox/shm file when the IPC NamespaceMode !=
 	// NODE.
 
-	// Check if we need to do any capability/device mappings
-	if spec.Annotations["io.microsoft.virtualmachine.lcow.privileged"] == "true" {
-		log.G(ctx).Debug("'io.microsoft.virtualmachine.lcow.privileged' set for privileged container")
-
-		// Add all host devices
-		hostDevices, err := devices.HostDevices()
-		if err != nil {
-			return err
-		}
-		for _, hostDevice := range hostDevices {
-			addLinuxDeviceToSpec(ctx, hostDevice, spec, false)
-		}
-
-		// Set the cgroup access
-		spec.Linux.Resources.Devices = []oci.LinuxDeviceCgroup{
-			{
-				Allow:  true,
-				Access: "rwm",
-			},
-		}
-	} else {
-		tempLinuxDevices := spec.Linux.Devices
-		spec.Linux.Devices = []oci.LinuxDevice{}
-		for _, ld := range tempLinuxDevices {
-			hostDevice, err := devices.DeviceFromPath(ld.Path, "rwm")
-			if err != nil {
-				return err
-			}
-			addLinuxDeviceToSpec(ctx, hostDevice, spec, true)
-		}
-	}
-
-	if userstr, ok := spec.Annotations["io.microsoft.lcow.userstr"]; ok {
-		if err := setUserStr(spec, userstr); err != nil {
-			return err
-		}
+	if err := applyAnnotationsToSpec(ctx, spec); err != nil {
+		return err
 	}
 
 	// Force the parent cgroup into our /containers root
