@@ -139,6 +139,10 @@ func Create(ctx context.Context, id string, s *specs.Spec) (_ cow.Container, _ *
 	layers := layers.NewImageLayers(nil, "", s.Windows.LayerFolders, sandboxPath, false)
 	r.SetLayers(layers)
 
+	if err := setupMounts(s, container.sandboxMount); err != nil {
+		return nil, nil, err
+	}
+
 	volumeGUIDRegex := `^\\\\\?\\(Volume)\{{0,1}[0-9a-fA-F]{8}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{4}\-[0-9a-fA-F]{12}(\}){0,1}\}(|\\)$`
 	if matched, err := regexp.MatchString(volumeGUIDRegex, s.Root.Path); !matched || err != nil {
 		return nil, nil, fmt.Errorf(`invalid container spec - Root.Path '%s' must be a volume GUID path in the format '\\?\Volume{GUID}\'`, s.Root.Path)
@@ -524,7 +528,7 @@ func systemProcessInformation() ([]*winapi.SYSTEM_PROCESS_INFORMATION, error) {
 	var (
 		systemProcInfo *winapi.SYSTEM_PROCESS_INFORMATION
 		procInfos      []*winapi.SYSTEM_PROCESS_INFORMATION
-		// This happens to be the buffer size hcs uses but there's no really no hard need to keep it
+		// This happens to be the buffer size hcs uses but there's really no hard need to keep it
 		// the same, it's just a sane default.
 		size   = uint32(1024 * 512)
 		bounds uintptr
