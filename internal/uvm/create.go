@@ -85,6 +85,11 @@ type Options struct {
 	// that receives the UVMs set of NICs from this proxy instead of enumerating
 	// the endpoints locally.
 	NetworkConfigProxy string
+
+	// Sets the location for process dumps to be placed in. On Linux this is a kernel setting so it will be
+	// applied to all containers. On Windows it's configurable per container, but we can mimic this for
+	// Windows by just applying the location specified here per container.
+	ProcessDumpLocation string
 }
 
 // compares the create opts used during template creation with the create opts
@@ -345,6 +350,12 @@ func (uvm *UtilityVM) ProcessorCount() int32 {
 // (Over commit and deferred commit both false)
 func (uvm *UtilityVM) PhysicallyBacked() bool {
 	return uvm.physicallyBacked
+}
+
+// ProcessDumpLocation returns the location that process dumps will get written to for containers running
+// in the UVM.
+func (uvm *UtilityVM) ProcessDumpLocation() string {
+	return uvm.processDumpLocation
 }
 
 func (uvm *UtilityVM) normalizeMemorySize(ctx context.Context, requested uint64) uint64 {

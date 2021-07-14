@@ -378,6 +378,10 @@ func CreateLCOW(ctx context.Context, opts *OptionsLCOW) (_ *UtilityVM, err error
 
 	initArgs += " " + opts.ExecCommandLine
 
+	if opts.ProcessDumpLocation != "" {
+		initArgs += " -core-dump-location " + opts.ProcessDumpLocation
+	}
+
 	if vmDebugging {
 		// Launch a shell on the console.
 		initArgs = `sh -c "` + initArgs + ` & exec sh"`
