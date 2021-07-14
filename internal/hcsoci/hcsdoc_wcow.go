@@ -367,6 +367,13 @@ func createWindowsContainerDocument(ctx context.Context, coi *createOptionsInter
 		return nil, nil, err
 	}
 
+	// add any device extensions
+	extensions, err := getDeviceExtensions(coi.Spec.Annotations)
+	if err != nil {
+		return nil, nil, err
+	}
+	v2Container.AdditionalDeviceNamespace = extensions
+
 	return v1, v2Container, nil
 }
 
@@ -383,7 +390,7 @@ func parseAssignedDevices(ctx context.Context, coi *createOptionsInternal, v2 *h
 		switch d.IDType {
 		case uvm.VPCILocationPathIDType:
 			v2Dev.LocationPath = d.ID
-			v2Dev.Type = hcsschema.DeviceInstance
+			v2Dev.Type = hcsschema.DeviceInstanceID
 		case uvm.VPCIClassGUIDTypeLegacy:
 			v2Dev.InterfaceClassGuid = d.ID
 		case uvm.VPCIClassGUIDType:

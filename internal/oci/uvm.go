@@ -36,6 +36,17 @@ func parseAnnotationsBool(ctx context.Context, a map[string]string, key string, 
 	return def
 }
 
+// ParseAnnotationCommaSeparated searches `annotations` for `annotation` corresponding to a
+// list of comma separated strings
+func ParseAnnotationCommaSeparated(annotation string, annotations map[string]string) []string {
+	cs, ok := annotations[annotation]
+	if !ok || cs == "" {
+		return nil
+	}
+	results := strings.Split(cs, ",")
+	return results
+}
+
 // ParseAnnotationsCPUCount searches `s.Annotations` for the CPU annotation. If
 // not found searches `s` for the Windows CPU section. If neither are found
 // returns `def`.

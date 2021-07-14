@@ -79,6 +79,10 @@ const (
 	// .inf, .cer, and/or other files used during standard installation with pnputil.
 	AnnotationAssignedDeviceKernelDrivers = "io.microsoft.assigneddevice.kerneldrivers"
 
+	// AnnotationDeviceExtensions contains a comma separated list of full paths to device extension files.
+	// The content of these are added to a container's hcs create document.
+	AnnotationDeviceExtensions = "io.microsoft.container.wcow.deviceextensions"
+
 	// AnnotationHostProcessInheritUser indicates whether to ignore the username passed in to run a host process
 	// container as and instead inherit the user token from the executable that is launching the container process.
 	AnnotationHostProcessInheritUser = "microsoft.com/hostprocess-inherit-user"

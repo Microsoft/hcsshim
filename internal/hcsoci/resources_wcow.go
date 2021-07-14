@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Microsoft/hcsshim/internal/credentials"
+	"github.com/Microsoft/hcsshim/internal/devices"
 	"github.com/Microsoft/hcsshim/internal/layers"
 	"github.com/Microsoft/hcsshim/internal/log"
 	"github.com/Microsoft/hcsshim/internal/resources"
@@ -100,6 +101,21 @@ func allocateWindowsResources(ctx context.Context, coi *createOptionsInternal, r
 		}
 		r.Add(closers...)
 		coi.Spec.Windows.Devices = windowsDevices
+	}
+
+	if coi.HostingSystem != nil {
+		// get the spec specified kernel drivers and install them on the UVM
+		drivers, err := getAssignedDeviceKernelDrivers(coi.Spec.Annotations)
+		if err != nil {
+			return err
+		}
+		for _, d := range drivers {
+			driverCloser, err := devices.InstallWindowsDriver(ctx, coi.HostingSystem, d)
+			if err != nil {
+				return err
+			}
+			r.Add(driverCloser)
+		}
 	}
 
 	return nil
